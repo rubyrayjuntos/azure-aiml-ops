@@ -10,7 +10,7 @@ import os
 import re
 import subprocess
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
@@ -51,6 +51,8 @@ SENSITIVE_FIELD_KEYS = {
     "secondary_connection_string",
 }
 REDACTED = "<redacted:sensitive>"
+DEFAULT_RETENTION_DAYS = 30
+DEFAULT_MAXIMUM_PLAN_AGE_HOURS = 720
 
 
 def _canonical_json(value: Any) -> str:
@@ -187,6 +189,29 @@ def _terraform_version(terraform_dir: Path) -> dict[str, Any]:
     }
 
 
+def _parse_timestamp(value: Any) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError("artifact timestamp is missing")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("artifact timestamp must include a timezone")
+    return parsed.astimezone(UTC)
+
+
+def _state_identity(path: Path) -> dict[str, Any]:
+    raw = path.read_bytes()
+    if not raw.strip():
+        return {"exists": False, "lineage": None, "serial": None, "digest": _sha256(path)}
+    payload = _read_json(path)
+    if payload == {"state_absent": True}:
+        return {"exists": False, "lineage": None, "serial": None, "digest": _sha256(path)}
+    lineage = payload.get("lineage") if isinstance(payload, dict) else None
+    serial = payload.get("serial") if isinstance(payload, dict) else None
+    if not isinstance(lineage, str) or not lineage or not isinstance(serial, int):
+        raise ValueError("Terraform state snapshot lacks lineage or serial")
+    return {"exists": True, "lineage": lineage, "serial": serial, "digest": _sha256(path)}
+
+
 def create(args: argparse.Namespace) -> None:
     root = Path(args.artifact_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -210,9 +235,14 @@ def create(args: argparse.Namespace) -> None:
     )
 
     receipt = _read_json(Path(args.generation_receipt))
+    for field in ("platform_source_commit", "platform_package_digest"):
+        if field not in receipt:
+            raise ValueError("generation receipt lacks immutable platform provenance")
     approval = {
         "approval_contract_version": SCHEMA_VERSION,
         "source_commit": args.source_commit,
+        "platform_source_commit": receipt["platform_source_commit"],
+        "platform_package_digest": receipt["platform_package_digest"],
         "generation_id": receipt["generation_id"],
         "manifest_digest": receipt["manifest_digest"],
         "resolved_plan_digest": receipt["resolved_plan_digest"],
@@ -234,12 +264,18 @@ def create(args: argparse.Namespace) -> None:
         name: _sha256(root / name)
         for name in sorted(EXPECTED_FILES - {"artifact-manifest.v1.json"})
     }
+    created_at = datetime.now(UTC)
+    state_identity = _state_identity(Path(args.state_snapshot).resolve())
     manifest = {
         "artifact_manifest_schema_version": SCHEMA_VERSION,
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": created_at.isoformat(),
+        "expires_at": (created_at + timedelta(days=args.retention_days)).isoformat(),
+        "maximum_plan_age_hours": args.maximum_plan_age_hours,
         "expected_files": sorted(EXPECTED_FILES),
         "files": files,
         "source_commit": args.source_commit,
+        "platform_source_commit": receipt["platform_source_commit"],
+        "platform_package_digest": receipt["platform_package_digest"],
         "platform_version": receipt["platform_version"],
         "generation_id": receipt["generation_id"],
         "manifest_digest": receipt["manifest_digest"],
@@ -257,6 +293,7 @@ def create(args: argparse.Namespace) -> None:
             "storage_account": args.backend_storage_account,
             "container": args.backend_container,
             "state_key": args.state_key,
+            "state": state_identity,
         },
         "terraform": {
             **versions,
@@ -285,7 +322,12 @@ def verify_artifact(
     expected_run_attempt: str | None = None,
     expected_environment: str | None = None,
     reviewed_plan_digest: str | None = None,
+    reviewed_json_digest: str | None = None,
+    expected_tenant_id: str | None = None,
+    expected_subscription_id: str | None = None,
+    current_state_snapshot: Path | None = None,
     project_root: Path | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     actual_files = {path.name for path in root.iterdir() if path.is_file()}
     if actual_files != EXPECTED_FILES:
@@ -310,7 +352,16 @@ def verify_artifact(
     sanitized = _read_json(json_path)
     _assert_no_credentials(sanitized)
     approval = _read_json(root / "approval-metadata.json")
+    checked_at = (now or datetime.now(UTC)).astimezone(UTC)
+    created_at = _parse_timestamp(manifest.get("created_at"))
+    expires_at = _parse_timestamp(manifest.get("expires_at"))
+    maximum_age = manifest.get("maximum_plan_age_hours")
+    if not isinstance(maximum_age, int) or maximum_age <= 0:
+        raise ValueError("artifact maximum plan age is invalid")
     checks = {
+        "created_not_future": created_at <= checked_at,
+        "not_expired": checked_at <= expires_at,
+        "within_maximum_age": checked_at - created_at <= timedelta(hours=maximum_age),
         "plan_digest_file": _read_digest(root / "r1.tfplan.sha256", "r1.tfplan") == plan_digest,
         "json_digest_file": _read_digest(
             root / "r1-plan.sanitized.json.sha256", "r1-plan.sanitized.json"
@@ -324,6 +375,10 @@ def verify_artifact(
         "approval_json_digest": approval.get("sanitized_plan_digest") == json_digest,
         "approval_generation": approval.get("generation_id") == manifest.get("generation_id"),
         "approval_commit": approval.get("source_commit") == manifest.get("source_commit"),
+        "approval_platform_commit": approval.get("platform_source_commit")
+        == manifest.get("platform_source_commit"),
+        "approval_platform_package": approval.get("platform_package_digest")
+        == manifest.get("platform_package_digest"),
         "approval_environment": approval.get("target_environment")
         == manifest.get("target_environment"),
         "approval_run": approval.get("plan_run_id") == manifest.get("plan_run_id"),
@@ -336,6 +391,12 @@ def verify_artifact(
         "subscription_id": bool(
             re.fullmatch(r"[0-9a-fA-F-]{36}", manifest.get("subscription_id", ""))
         ),
+        "platform_source_commit": bool(
+            re.fullmatch(r"[0-9a-f]{40}", manifest.get("platform_source_commit", ""))
+        ),
+        "platform_package_digest": bool(
+            re.fullmatch(r"sha256:[0-9a-f]{64}", manifest.get("platform_package_digest", ""))
+        ),
     }
     if expected_run_id is not None:
         checks["expected_run"] = manifest.get("plan_run_id") == expected_run_id
@@ -345,6 +406,20 @@ def verify_artifact(
         checks["expected_environment"] = manifest.get("target_environment") == expected_environment
     if reviewed_plan_digest is not None:
         checks["reviewed_plan_digest"] = reviewed_plan_digest.lower() == plan_digest
+    if reviewed_json_digest is not None:
+        checks["reviewed_json_digest"] = reviewed_json_digest.lower() == json_digest
+    if expected_tenant_id is not None:
+        checks["expected_tenant"] = (
+            manifest.get("tenant_id", "").lower() == expected_tenant_id.lower()
+        )
+    if expected_subscription_id is not None:
+        checks["expected_subscription"] = (
+            manifest.get("subscription_id", "").lower() == expected_subscription_id.lower()
+        )
+    if current_state_snapshot is not None:
+        checks["backend_state_unchanged"] = (
+            manifest.get("backend", {}).get("state") == _state_identity(current_state_snapshot)
+        )
     if project_root is not None:
         receipt = _read_json(project_root / "generation-receipt.json")
         for key in (
@@ -355,6 +430,8 @@ def verify_artifact(
             "template_digest",
             "generated_files_digest",
             "dependency_constraints_digest",
+            "platform_source_commit",
+            "platform_package_digest",
         ):
             checks[f"receipt_{key}"] = manifest.get(key) == receipt.get(key)
         backend = (
@@ -387,6 +464,12 @@ def verify(args: argparse.Namespace) -> None:
         expected_run_attempt=args.run_attempt,
         expected_environment=args.environment,
         reviewed_plan_digest=args.plan_digest,
+        reviewed_json_digest=args.json_digest,
+        expected_tenant_id=args.tenant_id,
+        expected_subscription_id=args.subscription_id,
+        current_state_snapshot=(
+            Path(args.current_state_snapshot).resolve() if args.current_state_snapshot else None
+        ),
         project_root=Path(args.project_root).resolve() if args.project_root else None,
     )
     if args.github_output:
@@ -395,6 +478,8 @@ def verify(args: argparse.Namespace) -> None:
         with output.open("a", encoding="utf-8") as stream:
             for key in (
                 "source_commit",
+                "platform_source_commit",
+                "platform_package_digest",
                 "generation_id",
                 "manifest_digest",
                 "resolved_plan_digest",
@@ -402,6 +487,7 @@ def verify(args: argparse.Namespace) -> None:
                 stream.write(f"{key}={manifest[key]}\n")
             stream.write(f"plan_requested_by={approval['plan_requested_by']}\n")
             stream.write(f"plan_digest={manifest['terraform_plan_digest']}\n")
+            stream.write(f"json_digest={manifest['sanitized_plan_digest']}\n")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -425,15 +511,24 @@ def parser() -> argparse.ArgumentParser:
         "backend-storage-account",
         "backend-container",
         "state-key",
+        "state-snapshot",
     ):
         create_parser.add_argument(f"--{name}", required=True)
     create_parser.set_defaults(handler=create)
+    create_parser.add_argument("--retention-days", type=int, default=DEFAULT_RETENTION_DAYS)
+    create_parser.add_argument(
+        "--maximum-plan-age-hours", type=int, default=DEFAULT_MAXIMUM_PLAN_AGE_HOURS
+    )
     verify_parser = commands.add_parser("verify")
     verify_parser.add_argument("--artifact-dir", required=True)
     verify_parser.add_argument("--run-id")
     verify_parser.add_argument("--run-attempt")
     verify_parser.add_argument("--environment")
     verify_parser.add_argument("--plan-digest")
+    verify_parser.add_argument("--json-digest")
+    verify_parser.add_argument("--tenant-id")
+    verify_parser.add_argument("--subscription-id")
+    verify_parser.add_argument("--current-state-snapshot")
     verify_parser.add_argument("--project-root")
     verify_parser.add_argument("--github-output", action="store_true")
     verify_parser.set_defaults(handler=verify)

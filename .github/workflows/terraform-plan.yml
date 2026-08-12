@@ -34,6 +34,8 @@ jobs:
           terraform_version: "1.10.0"
       - name: Initialize
         run: terraform -chdir=infra/terraform init -backend-config=backend-dev.hcl
+      - name: Capture pre-plan backend state identity
+        run: terraform -chdir=infra/terraform state pull > "${RUNNER_TEMP}/pre-plan-state.json"
       - name: Plan
         env:
           TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -65,6 +67,7 @@ jobs:
             --backend-storage-account "stazmlops0001devtf" \
             --backend-container "azure-ai-ml-ops-r1" \
             --state-key "azure-ai-ml-ops-dev.tfstate"
+            --state-snapshot "${RUNNER_TEMP}/pre-plan-state.json"
           plan_digest="$(cut -d ' ' -f 1 "${RUNNER_TEMP}/plan-artifact/r1.tfplan.sha256")"
           echo "plan_digest=$plan_digest" >> "$GITHUB_OUTPUT"
           {

@@ -117,10 +117,17 @@ def main() -> None:
     parser.add_argument("--source-sequence", type=int, required=True)
     parser.add_argument("--artifact", type=parse_artifact, action="append", default=[])
     parser.add_argument("--metadata", default="{}")
+    parser.add_argument("--occurred-at")
     args = parser.parse_args()
     metadata = json.loads(args.metadata)
     reject_sensitive_keys(metadata)
     now = datetime.now(UTC)
+    occurred_at = now
+    if args.occurred_at:
+        occurred_at = datetime.fromisoformat(args.occurred_at.replace("Z", "+00:00"))
+        if occurred_at.tzinfo is None:
+            raise ValueError("occurred-at must include a timezone")
+        occurred_at = occurred_at.astimezone(UTC)
     identity = event_identity(
         args.provider,
         args.capability,
@@ -143,7 +150,7 @@ def main() -> None:
         "state": args.state,
         "source_run_id": args.source_run_id,
         "source_sequence": args.source_sequence,
-        "occurred_at": now.isoformat(),
+        "occurred_at": occurred_at.isoformat(),
         "recorded_at": now.isoformat(),
         "artifact_references": args.artifact,
         "metadata": metadata,

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -56,15 +57,22 @@ def verify(root: Path) -> dict[str, Any]:
     for field, value in expected.items():
         if receipt.get(field) != value:
             raise ValueError(f"generation receipt {field} mismatch")
-    expected_generation_id = digest_json(
-        {
+    generation_identity = {
             "platform_version": receipt["platform_version"],
             "manifest_digest": expected["manifest_digest"],
             "resolved_plan_digest": expected["resolved_plan_digest"],
             "template_digest": receipt["template_digest"],
             "generated_files_digest": actual_files_digest,
-        }
-    )
+    }
+    if not re.fullmatch(r"[0-9a-f]{40}", receipt.get("platform_source_commit", "")):
+        raise ValueError("generation receipt platform source commit is invalid")
+    if not re.fullmatch(
+        r"sha256:[0-9a-f]{64}", receipt.get("platform_package_digest", "")
+    ):
+        raise ValueError("generation receipt platform package digest is invalid")
+    generation_identity["platform_source_commit"] = receipt["platform_source_commit"]
+    generation_identity["platform_package_digest"] = receipt["platform_package_digest"]
+    expected_generation_id = digest_json(generation_identity)
     if receipt.get("generation_id") != expected_generation_id:
         raise ValueError("generation receipt generation_id mismatch")
     return receipt
