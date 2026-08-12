@@ -66,7 +66,7 @@ jobs:
             --backend-resource-group "rg-azmlops-0001dev-tf" \
             --backend-storage-account "stazmlops0001devtf" \
             --backend-container "azure-ai-ml-ops-r1" \
-            --state-key "azure-ai-ml-ops-dev.tfstate"
+            --state-key "azure-ai-ml-ops-dev.tfstate" \
             --state-snapshot "${RUNNER_TEMP}/pre-plan-state.json"
           plan_digest="$(cut -d ' ' -f 1 "${RUNNER_TEMP}/plan-artifact/r1.tfplan.sha256")"
           echo "plan_digest=$plan_digest" >> "$GITHUB_OUTPUT"

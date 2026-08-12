@@ -3,11 +3,11 @@
     "ml"
   ],
   "dependency_constraints_digest": "sha256:21f8a33510f047a43d60b3a9066baf9cb61b8e5f9dfdddd7263774787faec966",
-  "generated_files_digest": "sha256:a1c2d75a101ac59bcff46364b3ff3ad309763779c307415ec3c4a91b86f0428e",
-  "generation_id": "sha256:cd783463e99fea793671edd7c73d5b95e809b1eb2fe7595f0d25d58bed264666",
+  "generated_files_digest": "sha256:46816ebf84ee6d9aebd09ec0b10d94d8d8e9d2ab7074bde2fe24baaa9136ef36",
+  "generation_id": "sha256:f2018b1f6d6de86c346e3c06a30bf72fae73a6b823259f8d10770b067df08e03",
   "manifest_digest": "sha256:61e2f5cafe93b65460886ef1189b7df5e9438f8d0c873ebb35f07db96262c588",
-  "platform_package_digest": "sha256:fc681f62d1476f907ccea0331fdf290924884eb05f3192e8a672ab4372050d58",
-  "platform_source_commit": "fe3a66fe11bfed2d1c382c4835f592c81a0fe7b2",
+  "platform_package_digest": "sha256:fc5429ceed8485a57b5d5be6e4751a92bd877663361a065d5df0074387fe7c1c",
+  "platform_source_commit": "91ec8bc9c7e1fe3837f27e3c1110dd80126b0004",
   "platform_version": "1.0.0",
   "providers": {
     "evidence": "azure_blob",
@@ -18,5 +18,5 @@
   },
   "receipt_schema_version": "1.0",
   "resolved_plan_digest": "sha256:63f8ddfbdca984274265cf919cf7188726256fb2bfea87b628154465ffbdea81",
-  "template_digest": "sha256:44ddd250f77fdae8db3693b4052c76e5a49f75f5453bf2e1b06ff98a25872864"
+  "template_digest": "sha256:ce1b996a452d2e3a133fe888ab9f78b93d85fddcde2121c2400dceacd7700089"
 }
