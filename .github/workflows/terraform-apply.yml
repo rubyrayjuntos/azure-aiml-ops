@@ -89,7 +89,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install provenance verifier dependency
-        run: python -m pip install -c constraints.txt pyyaml==6.0.3
+        run: python -m pip install -c constraints.txt pyyaml
       - id: provenance
         name: Verify checked-out generation provenance
         run: python scripts/verify_generation.py --github-output
