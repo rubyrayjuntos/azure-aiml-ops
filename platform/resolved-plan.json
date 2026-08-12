@@ -24,7 +24,7 @@
     "expected_tenant_id": "90a7175b-82cd-4815-9050-8cbae3a1d234",
     "oidc_audience": "api://AzureADTokenExchange",
     "oidc_issuer": "https://token.actions.githubusercontent.com",
-    "oidc_subject": "repo:rubyrayjuntos/azure-aiml-ops:environment:dev"
+    "oidc_subject": "repo:rubyrayjuntos@204968804/azure-aiml-ops@1331566719:environment:dev"
   },
   "capabilities": [
     {
@@ -184,7 +184,7 @@
         "federated_credential": {
           "audience": "api://AzureADTokenExchange",
           "issuer": "https://token.actions.githubusercontent.com",
-          "subject": "repo:rubyrayjuntos/azure-aiml-ops:environment:dev"
+          "subject": "repo:rubyrayjuntos@204968804/azure-aiml-ops@1331566719:environment:dev"
         },
         "object_id_environment_variable": "AZURE_CLIENT_OBJECT_ID"
       },
