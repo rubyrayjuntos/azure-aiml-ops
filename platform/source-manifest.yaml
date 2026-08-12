@@ -1,0 +1,50 @@
+capabilities:
+  ml:
+    features:
+    - training
+    - evaluation
+    - registry
+    - batch_serving
+    - evidence
+    provider: azure_ml
+environments:
+- dev
+infrastructure:
+  azure:
+    provider: terraform
+manifest_schema_version: '1.0'
+platform_version: 1.0.0
+policy:
+  allow_cross_subscription_backend: false
+  allowed_regions:
+  - eastus
+  capability_maturity: allow_preview
+  data_classification: internal
+  deployment_approval: manual_dispatch_with_plan_digest
+  evidence_retention_days: 90
+product:
+  cost_center: UNASSIGNED
+  display_name: Azure AI ML Ops
+  name: azure-ai-ml-ops
+  owner: Ray Swan
+provider_extensions:
+  azure_ml:
+    batch_compute_max_instances: 4
+    compute_size: Standard_D4s_v5
+    location: eastus
+    training_compute_max_instances: 4
+shared_resources:
+  azure_context:
+    deployment_identity:
+      client_id_environment_variable: AZURE_CLIENT_ID
+      federated_credential:
+        audience: api://AzureADTokenExchange
+        issuer: https://token.actions.githubusercontent.com
+        subject: repo:rubyrayjuntos/azure-aiml-ops:environment:dev
+      object_id_environment_variable: AZURE_CLIENT_OBJECT_ID
+    subscription_id: 5b452321-32fd-4b1c-8bbf-6d69a5a587ad
+    tenant_id: 90a7175b-82cd-4815-9050-8cbae3a1d234
+  terraform_backend:
+    container_name: azure-ai-ml-ops-r1
+    resource_group_id: /subscriptions/5b452321-32fd-4b1c-8bbf-6d69a5a587ad/resourceGroups/rg-azmlops-0001dev-tf
+    storage_account_id: /subscriptions/5b452321-32fd-4b1c-8bbf-6d69a5a587ad/resourceGroups/rg-azmlops-0001dev-tf/providers/Microsoft.Storage/storageAccounts/stazmlops0001devtf

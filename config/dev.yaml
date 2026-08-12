@@ -1,0 +1,12 @@
+profile_version: 1
+environment: dev
+location: eastus
+compute_size: Standard_D4s_v5
+training_compute_max_instances: 4
+batch_compute_max_instances: 4
+resource_group: rg-azure-ai-ml-ops-dev
+workspace: mlw-azure-ai-ml-ops-dev
+model_name: azure-ai-ml-ops-model
+batch_endpoint: azure-ai-ml-ops-batch
+evidence_container: platform-evidence
+terraform_state_key: azure-ai-ml-ops-dev.tfstate

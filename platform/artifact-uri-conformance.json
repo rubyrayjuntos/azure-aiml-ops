@@ -1,0 +1,17 @@
+{
+  "valid": [
+    "azureml://jobs/run-123",
+    "azureml:model-name:7",
+    "azure://subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/st",
+    "https://account.blob.core.windows.net/container/path/file.parquet"
+  ],
+  "invalid": [
+    "https://user:password@example.test/artifact",
+    "https://account.blob.core.windows.net/container/file?sig=fake&se=2099-01-01",
+    "https://example.test/artifact?token=fake",
+    "https://example.test/artifact?version=1",
+    "DefaultEndpointsProtocol=https;AccountName=example;AccountKey=fake",
+    "file:///tmp/model.pkl",
+    "https://example.test/artifact\nnext"
+  ]
+}

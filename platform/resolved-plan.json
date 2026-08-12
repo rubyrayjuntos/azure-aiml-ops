@@ -1,0 +1,205 @@
+{
+  "applied_defaults": {
+    "allowed_regions": [
+      "eastus"
+    ],
+    "batch_compute_max_instances": 4,
+    "capability_maturity_policy": "allow_preview",
+    "compute_size": "Standard_D4s_v5",
+    "data_classification": "internal",
+    "evidence_retention_days": 90,
+    "location": "eastus",
+    "terraform_state_key": "azure-ai-ml-ops-dev.tfstate",
+    "training_compute_max_instances": 4
+  },
+  "approval_policy": "manual_dispatch_with_plan_digest",
+  "approval_required": true,
+  "azure_context": {
+    "backend_subscription_id": "5b452321-32fd-4b1c-8bbf-6d69a5a587ad",
+    "cross_subscription_backend": false,
+    "cross_subscription_backend_allowed": false,
+    "deployment_identity_client_id_environment_variable": "AZURE_CLIENT_ID",
+    "deployment_identity_object_id_environment_variable": "AZURE_CLIENT_OBJECT_ID",
+    "deployment_subscription_id": "5b452321-32fd-4b1c-8bbf-6d69a5a587ad",
+    "expected_tenant_id": "90a7175b-82cd-4815-9050-8cbae3a1d234",
+    "oidc_audience": "api://AzureADTokenExchange",
+    "oidc_issuer": "https://token.actions.githubusercontent.com",
+    "oidc_subject": "repo:rubyrayjuntos/azure-aiml-ops:environment:dev"
+  },
+  "capabilities": [
+    {
+      "capability": "infrastructure",
+      "incompatible_capabilities": [],
+      "maturity": "preview",
+      "operations": [
+        "plan",
+        "apply"
+      ],
+      "provider": "terraform",
+      "required_capabilities": []
+    },
+    {
+      "capability": "ml",
+      "incompatible_capabilities": [],
+      "maturity": "preview",
+      "operations": [
+        "training",
+        "evaluation"
+      ],
+      "provider": "azure_ml",
+      "required_capabilities": []
+    },
+    {
+      "capability": "registry",
+      "incompatible_capabilities": [],
+      "maturity": "preview",
+      "operations": [
+        "registry"
+      ],
+      "provider": "azure_ml",
+      "required_capabilities": [
+        "ml:training",
+        "ml:evaluation"
+      ]
+    },
+    {
+      "capability": "serving",
+      "incompatible_capabilities": [],
+      "maturity": "preview",
+      "operations": [
+        "batch_serving"
+      ],
+      "provider": "azure_ml_batch",
+      "required_capabilities": [
+        "registry:registry"
+      ]
+    },
+    {
+      "capability": "evidence",
+      "incompatible_capabilities": [],
+      "maturity": "preview",
+      "operations": [
+        "evidence"
+      ],
+      "provider": "azure_blob",
+      "required_capabilities": []
+    }
+  ],
+  "environment": "dev",
+  "environment_topology": {
+    "dev": {
+      "azure_ml_workspace": "mlw-azure-ai-ml-ops-dev",
+      "evidence_container": "platform-evidence",
+      "resource_group": "rg-azure-ai-ml-ops-dev",
+      "terraform_state_key": "azure-ai-ml-ops-dev.tfstate"
+    }
+  },
+  "generated_components": [
+    "terraform",
+    "azure_ml_training",
+    "azure_ml_registry",
+    "azure_ml_batch",
+    "azure_blob_evidence",
+    "github_actions"
+  ],
+  "manifest_schema_version": "1.0",
+  "maturity_report": {
+    "authorization_result": "allowed",
+    "cli_override_supplied": true,
+    "manifest_policy": "allow_preview",
+    "release_status": "preview",
+    "remaining_evidence_boundary": "dev_live_pending"
+  },
+  "platform_version": "1.0.0",
+  "preconditions": [
+    "Environment resource group exists.",
+    "Terraform backend exists and is reachable.",
+    "GitHub OIDC deployment identity has scoped environment permissions.",
+    "Azure ML and required regional VM quota are available."
+  ],
+  "project": "azure-ai-ml-ops",
+  "provider_extensions": {
+    "azure_ml": {
+      "batch_compute_max_instances": 4,
+      "compute_size": "Standard_D4s_v5",
+      "location": "eastus",
+      "training_compute_max_instances": 4
+    }
+  },
+  "providers": {
+    "evidence": "azure_blob",
+    "infrastructure": "terraform",
+    "registry": "azure_ml",
+    "serving": "azure_ml_batch",
+    "training": "azure_ml"
+  },
+  "resources": [
+    {
+      "cost_class": "always_on",
+      "kind": "azure_ml_workspace",
+      "notes": "Project and environment isolated.",
+      "owner": "terraform"
+    },
+    {
+      "cost_class": "always_on",
+      "kind": "storage_account",
+      "notes": "Contains Azure ML assets and the private platform-evidence container.",
+      "owner": "terraform"
+    },
+    {
+      "cost_class": "always_on",
+      "kind": "key_vault",
+      "notes": "",
+      "owner": "terraform"
+    },
+    {
+      "cost_class": "always_on",
+      "kind": "log_analytics_and_application_insights",
+      "notes": "",
+      "owner": "terraform"
+    },
+    {
+      "cost_class": "scale_to_zero",
+      "kind": "azure_ml_training_compute",
+      "notes": "",
+      "owner": "terraform"
+    },
+    {
+      "cost_class": "scale_to_zero",
+      "kind": "azure_ml_batch_compute",
+      "notes": "",
+      "owner": "terraform"
+    },
+    {
+      "cost_class": "job_scoped",
+      "kind": "azure_ml_training_and_batch_jobs",
+      "notes": "",
+      "owner": "azure_ml"
+    }
+  ],
+  "shared_resources": {
+    "azure_context": {
+      "deployment_identity": {
+        "client_id_environment_variable": "AZURE_CLIENT_ID",
+        "federated_credential": {
+          "audience": "api://AzureADTokenExchange",
+          "issuer": "https://token.actions.githubusercontent.com",
+          "subject": "repo:rubyrayjuntos/azure-aiml-ops:environment:dev"
+        },
+        "object_id_environment_variable": "AZURE_CLIENT_OBJECT_ID"
+      },
+      "subscription_id": "5b452321-32fd-4b1c-8bbf-6d69a5a587ad",
+      "tenant_id": "90a7175b-82cd-4815-9050-8cbae3a1d234"
+    },
+    "terraform_backend": {
+      "container_name": "azure-ai-ml-ops-r1",
+      "resource_group_id": "/subscriptions/5b452321-32fd-4b1c-8bbf-6d69a5a587ad/resourceGroups/rg-azmlops-0001dev-tf",
+      "storage_account_id": "/subscriptions/5b452321-32fd-4b1c-8bbf-6d69a5a587ad/resourceGroups/rg-azmlops-0001dev-tf/providers/Microsoft.Storage/storageAccounts/stazmlops0001devtf"
+    }
+  },
+  "unsupported_requests": [],
+  "warnings": [
+    "R1 providers remain preview until the Dev clean-room proof succeeds.",
+    "Bicep, online serving, monitoring, retraining, Foundry, Search, and Databricks are excluded."
+  ]
+}
