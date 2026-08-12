@@ -92,9 +92,39 @@ resource "azurerm_machine_learning_workspace" "this" {
   application_insights_id       = azurerm_application_insights.this.id
   key_vault_id                  = azurerm_key_vault.this.id
   storage_account_id            = azurerm_storage_account.this.id
+  storage_account_access_type   = "Identity"
   public_network_access_enabled = var.environment != "prod"
   identity { type = "SystemAssigned" }
   tags = local.tags
+}
+
+# Azure ML requires a user-assigned compute identity for model and MLflow
+# input/output operations when Shared Key access is disabled. The identity is
+# project-owned; its principal ID is expected to be known only after apply.
+resource "azurerm_user_assigned_identity" "compute" {
+  name                = "id-${var.project_name}-${var.environment}-compute"
+  location            = var.location
+  resource_group_name = data.azurerm_resource_group.environment.name
+  tags                = local.tags
+}
+
+data "azurerm_role_definition" "blob_contributor" {
+  name = "Storage Blob Data Contributor"
+}
+
+resource "azurerm_role_assignment" "compute_storage" {
+  scope                            = azurerm_storage_account.this.id
+  role_definition_id               = data.azurerm_role_definition.blob_contributor.id
+  principal_id                     = azurerm_user_assigned_identity.compute.principal_id
+  principal_type                   = "ServicePrincipal"
+  skip_service_principal_aad_check = true
+}
+
+resource "azurerm_role_assignment" "workflow_storage" {
+  scope              = azurerm_storage_account.this.id
+  role_definition_id = data.azurerm_role_definition.blob_contributor.id
+  principal_id       = var.workflow_principal_object_id
+  principal_type     = "ServicePrincipal"
 }
 
 resource "azurerm_machine_learning_compute_cluster" "training" {
@@ -108,7 +138,11 @@ resource "azurerm_machine_learning_compute_cluster" "training" {
     max_node_count                       = var.training_compute_max_instances
     scale_down_nodes_after_idle_duration = "PT5M"
   }
-  identity { type = "SystemAssigned" }
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.compute.id]
+  }
+  depends_on = [azurerm_role_assignment.compute_storage]
 }
 
 resource "azurerm_machine_learning_compute_cluster" "batch" {
@@ -122,16 +156,9 @@ resource "azurerm_machine_learning_compute_cluster" "batch" {
     max_node_count                       = var.batch_compute_max_instances
     scale_down_nodes_after_idle_duration = "PT5M"
   }
-  identity { type = "SystemAssigned" }
-}
-
-data "azurerm_role_definition" "blob_contributor" {
-  name = "Storage Blob Data Contributor"
-}
-
-resource "azurerm_role_assignment" "workflow_evidence" {
-  scope              = azurerm_storage_container.evidence.id
-  role_definition_id = data.azurerm_role_definition.blob_contributor.id
-  principal_id       = var.workflow_principal_object_id
-  principal_type     = "ServicePrincipal"
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.compute.id]
+  }
+  depends_on = [azurerm_role_assignment.compute_storage]
 }

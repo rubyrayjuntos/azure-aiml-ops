@@ -20,7 +20,9 @@ terraform -chdir=infra/terraform validate
 
 `platform/source-manifest.yaml` preserves canonicalized user intent without resolved defaults. `platform/resolved-plan.json` records every applied default and selected provider. `generation-receipt.json` attests to both files, the dependency constraints, templates, and the generated tree. Dependency changes are made through a new platform/template version and regeneration, never by editing a generated lock in place.
 
-`terraform-plan.yml` publishes an immutable binary plan and provenance metadata. `terraform-apply.yml` is a separate manual dispatch that requires the reviewed plan run, attempt, exact SHA-256 digest, and an environment confirmation phrase. It downloads and applies that artifact without replanning. This implements `manual_dispatch_with_plan_digest`; it provides deliberate authorization and immutable-plan binding but does not claim independent reviewer separation when one human operates the repository.
+`terraform-plan.yml` publishes exactly six files: `r1.tfplan`, `r1.tfplan.sha256`, `r1-plan.sanitized.json`, `r1-plan.sanitized.json.sha256`, `approval-metadata.json`, and `artifact-manifest.v1.json`. The manifest binds the plan to its human-reviewable representation, source and generation provenance, Terraform/provider versions, backend/state identity, execution context, and action summary. Raw Terraform JSON is deleted rather than uploaded. `terraform-apply.yml` is a separate manual dispatch that rejects incomplete or inconsistent artifacts, requires the reviewed plan run, attempt, exact SHA-256 digest, and an environment confirmation phrase, and applies without replanning. This implements `manual_dispatch_with_plan_digest`; it provides deliberate authorization and immutable-plan binding but does not claim independent reviewer separation when one human operates the repository.
+
+The Azure ML workspace uses a system-assigned identity and explicit identity-based default storage. Training and batch compute share a project-created user-assigned identity with the storage role required for model/MLflow input and output while Shared Key is disabled. Identity resources, roles, scopes, and dependencies are reviewable in the saved plan; newly created principal IDs are verified after apply.
 
 Live deployment also requires an existing environment resource group, Terraform backend, GitHub OIDC identity, and environment-scoped permissions. The initial source push must not run an apply workflow. Establish and independently verify default-branch protection before exercising `oidc-smoke.yml` or any deployment workflow.
 
@@ -30,6 +32,7 @@ Run `aiml-scaffold doctor . --environment dev --no-cloud` for receipt and local-
 
 | Version | Created | Modified | Who | Notes |
 |---|---|---|---|---|
+| 0.5.0 | 2026-08-11 | 2026-08-12 | AIML-SCAFFOLD | Added identity-based AML storage, project-owned compute identity, and the versioned six-file saved-plan review artifact. |
 | 0.4.0 | 2026-08-11 | 2026-08-12 | AIML-SCAFFOLD | Added digest-bound plan/apply authorization and a nonmutating GitHub OIDC proof workflow. |
 | 0.3.0 | 2026-08-11 | 2026-08-11 | AIML-SCAFFOLD | Added explicit Azure context and read-only doctor identity/backend/OIDC evidence boundaries. |
 | 0.2.0 | 2026-08-11 | 2026-08-11 | AIML-SCAFFOLD | Added preflight provenance, evidence URI integrity, and dependency constraints. |

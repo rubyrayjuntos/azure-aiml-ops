@@ -41,6 +41,10 @@ jobs:
           path: ${{ runner.temp }}/approved-plan
           github-token: ${{ github.token }}
           run-id: ${{ inputs.plan_run_id }}
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
       - id: approval
         name: Verify manual authorization and immutable plan
         env:
@@ -51,49 +55,17 @@ jobs:
           CONFIRM_ENVIRONMENT: ${{ inputs.confirm_environment }}
           TARGET_ENVIRONMENT: "dev"
         run: |
-          python - <<'PY'
-          import hashlib
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          root = Path(os.environ["APPROVED_PLAN_DIR"])
-          expected_files = {"r1.tfplan", "approval-metadata.json"}
-          actual_files = {path.name for path in root.iterdir() if path.is_file()}
-          if actual_files != expected_files:
-              raise SystemExit("reviewed artifact contents do not match the approval contract")
-          metadata = json.loads((root / "approval-metadata.json").read_text(encoding="utf-8"))
-          digest = f"sha256:{hashlib.sha256((root / 'r1.tfplan').read_bytes()).hexdigest()}"
-          supplied = os.environ["REVIEWED_PLAN_DIGEST"].lower()
-          if not re.fullmatch(r"sha256:[0-9a-f]{64}", supplied):
-              raise SystemExit("reviewed plan digest format is invalid")
-          checks = {
-              "approval_contract_version": metadata.get("approval_contract_version") == "1.0",
-              "plan_digest": digest == supplied == metadata.get("terraform_plan_digest"),
-              "plan_run_id": metadata.get("plan_run_id") == os.environ["EXPECTED_PLAN_RUN_ID"],
-              "plan_run_attempt": metadata.get("plan_run_attempt") == os.environ["EXPECTED_PLAN_RUN_ATTEMPT"],
-              "target_environment": metadata.get("target_environment") == os.environ["TARGET_ENVIRONMENT"],
-              "confirmation": os.environ["CONFIRM_ENVIRONMENT"] == "APPLY_DEV",
-              "source_commit": bool(re.fullmatch(r"[0-9a-f]{40}", metadata.get("source_commit", ""))),
-              "generation_id": bool(re.fullmatch(r"sha256:[0-9a-f]{64}", metadata.get("generation_id", ""))),
-          }
-          failed = sorted(name for name, passed in checks.items() if not passed)
-          if failed:
-              raise SystemExit("approval verification failed: " + ", ".join(failed))
-          output = Path(os.environ["GITHUB_OUTPUT"])
-          with output.open("a", encoding="utf-8") as stream:
-              for key in ("source_commit", "generation_id", "manifest_digest", "resolved_plan_digest"):
-                  stream.write(f"{key}={metadata[key]}\n")
-              stream.write(f"plan_requested_by={metadata['plan_requested_by']}\n")
-              stream.write(f"plan_digest={digest}\n")
-          PY
+          test "$CONFIRM_ENVIRONMENT" = "APPLY_DEV"
+          python scripts/plan_artifact.py verify \
+            --artifact-dir "$APPROVED_PLAN_DIR" \
+            --run-id "$EXPECTED_PLAN_RUN_ID" \
+            --run-attempt "$EXPECTED_PLAN_RUN_ATTEMPT" \
+            --environment "$TARGET_ENVIRONMENT" \
+            --plan-digest "$REVIEWED_PLAN_DIGEST" \
+            --github-output
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ steps.approval.outputs.source_commit }}
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.11"
       - name: Install provenance verifier dependency
         run: python -m pip install -c constraints.txt pyyaml
       - id: provenance
@@ -111,6 +83,13 @@ jobs:
           test "$ACTUAL_GENERATION_ID" = "$EXPECTED_GENERATION_ID"
           test "$ACTUAL_MANIFEST_DIGEST" = "$EXPECTED_MANIFEST_DIGEST"
           test "$ACTUAL_RESOLVED_PLAN_DIGEST" = "$EXPECTED_RESOLVED_PLAN_DIGEST"
+          python scripts/plan_artifact.py verify \
+            --artifact-dir "${{ runner.temp }}/approved-plan" \
+            --run-id "${{ inputs.plan_run_id }}" \
+            --run-attempt "${{ inputs.plan_run_attempt }}" \
+            --environment "dev" \
+            --plan-digest "${{ inputs.reviewed_plan_digest }}" \
+            --project-root .
       - name: Record authorization boundary
         env:
           PLAN_REQUESTED_BY: ${{ steps.approval.outputs.plan_requested_by }}
@@ -142,6 +121,27 @@ jobs:
         run: |
           echo "storage=$(terraform -chdir=infra/terraform output -raw storage_account_name)" >> "$GITHUB_OUTPUT"
           echo "workspace=$(terraform -chdir=infra/terraform output -raw workspace_name)" >> "$GITHUB_OUTPUT"
+      - name: Verify applied identity and RBAC graph
+        if: steps.apply.outcome == 'success'
+        run: |
+          workspace_principal=$(terraform -chdir=infra/terraform output -raw workspace_identity_principal_id)
+          compute_identity_id=$(terraform -chdir=infra/terraform output -raw compute_identity_id)
+          compute_principal=$(terraform -chdir=infra/terraform output -raw compute_identity_principal_id)
+          compute_role_id=$(terraform -chdir=infra/terraform output -raw compute_storage_role_assignment_id)
+          workflow_role_id=$(terraform -chdir=infra/terraform output -raw workflow_storage_role_assignment_id)
+          resource_group_id=$(terraform -chdir=infra/terraform output -raw resource_group_id)
+
+          actual_workspace_principal=$(az resource show \
+            --ids "${resource_group_id}/providers/Microsoft.MachineLearningServices/workspaces/${{ steps.outputs.outputs.workspace }}" \
+            --api-version 2025-06-01 --query identity.principalId -o tsv)
+          actual_compute_principal=$(az resource show \
+            --ids "$compute_identity_id" --api-version 2023-01-31 \
+            --query properties.principalId -o tsv)
+          test "${actual_workspace_principal,,}" = "${workspace_principal,,}"
+          test "${actual_compute_principal,,}" = "${compute_principal,,}"
+          test "$(az role assignment list --all --query "[?id=='$compute_role_id' && roleDefinitionName=='Storage Blob Data Contributor'] | length(@)" -o tsv)" = "1"
+          test "$(az role assignment list --all --query "[?id=='$workflow_role_id' && roleDefinitionName=='Storage Blob Data Contributor'] | length(@)" -o tsv)" = "1"
+          test "$(az role assignment list --assignee-object-id "$workspace_principal" --scope "$resource_group_id" --role "Azure AI Administrator" --query 'length(@)' -o tsv)" = "1"
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         if: always() && steps.outputs.outputs.storage != ''
         with:
