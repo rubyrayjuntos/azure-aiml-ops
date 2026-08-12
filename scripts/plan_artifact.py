@@ -443,10 +443,11 @@ def verify_artifact(
             "container": "container_name",
             "state_key": "key",
         }
-        for key, value in manifest["backend"].items():
+        for key, backend_key in backend_keys.items():
+            value = manifest["backend"][key]
             checks[f"backend_{key}"] = bool(
                 re.search(
-                    rf'^\s*{re.escape(backend_keys[key])}\s*=\s*"{re.escape(value)}"\s*$',
+                    rf'^\s*{re.escape(backend_key)}\s*=\s*"{re.escape(value)}"\s*$',
                     backend,
                     re.MULTILINE,
                 )
