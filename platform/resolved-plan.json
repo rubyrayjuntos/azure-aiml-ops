@@ -3,14 +3,51 @@
     "allowed_regions": [
       "eastus"
     ],
-    "batch_compute_max_instances": 4,
+    "batch_cluster_enabled": false,
     "capability_maturity_policy": "allow_preview",
-    "compute_size": "Standard_D4s_v5",
+    "compute_identity_required": false,
+    "cost_policy": {
+      "cloud_execution_requires_approval": true,
+      "default_max_nodes": 1,
+      "permit_spot_training": true,
+      "retain_idle_clusters": false
+    },
     "data_classification": "internal",
     "evidence_retention_days": 90,
+    "execution": {
+      "batch": {
+        "cloud_fallback": {
+          "enabled": false,
+          "idle_seconds_before_scaledown": 120,
+          "instance_type": null,
+          "max_instances": 1,
+          "min_instances": 0,
+          "mode": null,
+          "tier": "dedicated"
+        },
+        "provider": "local"
+      },
+      "development": {
+        "containerized": true,
+        "provider": "local"
+      },
+      "training": {
+        "cloud_fallback": {
+          "enabled": false,
+          "idle_seconds_before_scaledown": 120,
+          "instance_type": null,
+          "max_instances": 1,
+          "min_instances": 0,
+          "mode": null,
+          "tier": "spot"
+        },
+        "provider": "local"
+      }
+    },
     "location": "eastus",
     "terraform_state_key": "azure-ai-ml-ops-dev.tfstate",
-    "training_compute_max_instances": 4
+    "training_cluster_enabled": false,
+    "training_serverless_enabled": false
   },
   "approval_policy": "manual_dispatch_with_plan_digest",
   "approval_required": true,
@@ -96,9 +133,9 @@
   },
   "generated_components": [
     "terraform",
-    "azure_ml_training",
+    "local_ml_lifecycle",
+    "local_scoring",
     "azure_ml_registry",
-    "azure_ml_batch",
     "azure_blob_evidence",
     "github_actions"
   ],
@@ -115,23 +152,22 @@
     "Environment resource group exists.",
     "Terraform backend exists and is reachable.",
     "GitHub OIDC deployment identity has scoped environment permissions.",
-    "Azure ML and required regional VM quota are available."
+    "Exact regional SKU availability and quota are verified when cloud compute is enabled.",
+    "Each charged cloud compute workflow receives deliberate authorization."
   ],
   "project": "azure-ai-ml-ops",
   "provider_extensions": {
     "azure_ml": {
-      "batch_compute_max_instances": 4,
-      "compute_size": "Standard_D4s_v5",
-      "location": "eastus",
-      "training_compute_max_instances": 4
+      "location": "eastus"
     }
   },
   "providers": {
+    "development": "local",
     "evidence": "azure_blob",
     "infrastructure": "terraform",
     "registry": "azure_ml",
-    "serving": "azure_ml_batch",
-    "training": "azure_ml"
+    "serving": "local_scoring",
+    "training": "local"
   },
   "resources": [
     {
@@ -159,22 +195,10 @@
       "owner": "terraform"
     },
     {
-      "cost_class": "scale_to_zero",
-      "kind": "azure_ml_training_compute",
-      "notes": "",
-      "owner": "terraform"
-    },
-    {
-      "cost_class": "scale_to_zero",
-      "kind": "azure_ml_batch_compute",
-      "notes": "",
-      "owner": "terraform"
-    },
-    {
       "cost_class": "job_scoped",
-      "kind": "azure_ml_training_and_batch_jobs",
-      "notes": "",
-      "owner": "azure_ml"
+      "kind": "local_ml_lifecycle",
+      "notes": "Default Dev prepare, train, evaluate, package, score, and evidence path.",
+      "owner": "generated_project"
     }
   ],
   "shared_resources": {
@@ -200,6 +224,7 @@
   "unsupported_requests": [],
   "warnings": [
     "R1 providers remain preview until the Dev clean-room proof succeeds.",
+    "Local lifecycle evidence does not prove Azure ML execution, identity, lineage, registration, or batch serving.",
     "Bicep, online serving, monitoring, retraining, Foundry, Search, and Databricks are excluded."
   ]
 }

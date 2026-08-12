@@ -37,18 +37,3 @@ variable "evidence_retention_days" {
     error_message = "Evidence retention must be between 1 and 3650 days."
   }
 }
-
-variable "training_compute_size" {
-  type    = string
-  default = "Standard_D4s_v5"
-}
-
-variable "batch_compute_max_instances" {
-  type    = number
-  default = 4
-}
-
-variable "training_compute_max_instances" {
-  type    = number
-  default = 4
-}

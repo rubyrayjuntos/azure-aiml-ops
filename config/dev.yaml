@@ -1,9 +1,23 @@
 profile_version: 1
 environment: dev
 location: eastus
-compute_size: Standard_D4s_v5
-training_compute_max_instances: 4
-batch_compute_max_instances: 4
+execution:
+  development:
+    provider: local
+    containerized: true
+  training_cloud:
+    enabled: false
+    mode: null
+    instance_type: null
+    max_instances: 1
+  batch_cloud:
+    enabled: false
+    mode: null
+    instance_type: null
+    max_instances: 1
+cost_policy:
+  cloud_execution_requires_approval: true
+  default_max_nodes: 1
 resource_group: rg-azure-ai-ml-ops-dev
 workspace: mlw-azure-ai-ml-ops-dev
 model_name: azure-ai-ml-ops-model
