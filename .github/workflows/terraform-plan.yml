@@ -38,57 +38,49 @@ jobs:
         env:
           TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_workflow_principal_object_id: ${{ secrets.AZURE_CLIENT_OBJECT_ID }}
-        run: terraform -chdir=infra/terraform plan -out=r1.tfplan
-      - id: approval
-        name: Create immutable approval metadata
-        env:
-          GENERATION_ID: ${{ steps.provenance.outputs.generation_id }}
-          MANIFEST_DIGEST: ${{ steps.provenance.outputs.manifest_digest }}
-          RESOLVED_PLAN_DIGEST: ${{ steps.provenance.outputs.resolved_plan_digest }}
-          TARGET_ENVIRONMENT: "dev"
         run: |
-          plan_digest="sha256:$(sha256sum infra/terraform/r1.tfplan | cut -d ' ' -f 1)"
-          export PLAN_DIGEST="$plan_digest"
+          mkdir -p "${RUNNER_TEMP}/plan-artifact"
+          terraform -chdir=infra/terraform plan -out="${RUNNER_TEMP}/plan-artifact/r1.tfplan"
+          terraform -chdir=infra/terraform show -json "${RUNNER_TEMP}/plan-artifact/r1.tfplan" > "${RUNNER_TEMP}/r1-plan.raw.json"
+      - id: approval
+        name: Create and verify immutable review artifact
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          python scripts/plan_artifact.py create \
+            --artifact-dir "${RUNNER_TEMP}/plan-artifact" \
+            --terraform-dir infra/terraform \
+            --plan "${RUNNER_TEMP}/plan-artifact/r1.tfplan" \
+            --raw-json "${RUNNER_TEMP}/r1-plan.raw.json" \
+            --generation-receipt generation-receipt.json \
+            --source-commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --actor "$GITHUB_ACTOR" \
+            --tenant-id "$AZURE_TENANT_ID" \
+            --subscription-id "$AZURE_SUBSCRIPTION_ID" \
+            --environment "dev" \
+            --backend-resource-group "rg-azmlops-0001dev-tf" \
+            --backend-storage-account "stazmlops0001devtf" \
+            --backend-container "azure-ai-ml-ops-r1" \
+            --state-key "azure-ai-ml-ops-dev.tfstate"
+          plan_digest="$(cut -d ' ' -f 1 "${RUNNER_TEMP}/plan-artifact/r1.tfplan.sha256")"
           echo "plan_digest=$plan_digest" >> "$GITHUB_OUTPUT"
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          payload = {
-              "approval_contract_version": "1.0",
-              "source_commit": os.environ["GITHUB_SHA"],
-              "generation_id": os.environ["GENERATION_ID"],
-              "manifest_digest": os.environ["MANIFEST_DIGEST"],
-              "resolved_plan_digest": os.environ["RESOLVED_PLAN_DIGEST"],
-              "target_environment": os.environ["TARGET_ENVIRONMENT"],
-              "terraform_plan_digest": os.environ["PLAN_DIGEST"],
-              "plan_run_id": os.environ["GITHUB_RUN_ID"],
-              "plan_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-              "plan_requested_by": os.environ["GITHUB_ACTOR"],
-              "plan_producer": "github-actions",
-              "independent_human_reviewer_required": False,
-          }
-          Path("infra/terraform/approval-metadata.json").write_text(
-              json.dumps(payload, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          PY
           {
             echo "### Terraform plan approval contract"
             echo "- Plan digest: \`$plan_digest\`"
             echo "- Source commit: \`$GITHUB_SHA\`"
-            echo "- Generation ID: \`${GENERATION_ID}\`"
+            echo "- Generation ID: \`${{ steps.provenance.outputs.generation_id }}\`"
             echo "- Environment: \`dev\`"
+            echo "- Artifact schema: \`1.0\`"
             echo "- Apply requires a separate manual dispatch with this run ID and digest."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Publish reviewed-plan candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: terraform-plan-dev-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            infra/terraform/r1.tfplan
-            infra/terraform/approval-metadata.json
+          path: ${{ runner.temp }}/plan-artifact/
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
