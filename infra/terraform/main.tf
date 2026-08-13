@@ -104,15 +104,13 @@ data "azurerm_role_definition" "blob_contributor" {
 
 
 
-# Identity-based access to the workspace default storage requires an explicit
-# data-plane assignment for the workspace's system-assigned identity.
-resource "azurerm_role_assignment" "workspace_storage" {
-  scope                            = azurerm_storage_account.this.id
-  role_definition_id               = data.azurerm_role_definition.blob_contributor.id
-  principal_id                     = azurerm_machine_learning_workspace.this.identity[0].principal_id
-  principal_type                   = "ServicePrincipal"
-  skip_service_principal_aad_check = true
-}
+# The Microsoft.MachineLearningServices resource provider automatically grants
+# the workspace's system-assigned identity Storage Blob Data Contributor (and
+# Storage File Data Privileged Contributor) on its default storage account
+# whenever storage_account_access_type is "Identity". A separate Terraform-
+# managed role assignment for the same principal/role/scope conflicts with
+# that auto-provisioned one (409 RoleAssignmentExists), confirmed live against
+# a real Dev apply. Do not add an explicit workspace-storage role assignment.
 
 resource "azurerm_role_assignment" "workflow_storage" {
   scope              = azurerm_storage_account.this.id
