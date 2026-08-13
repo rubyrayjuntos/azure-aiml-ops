@@ -98,10 +98,6 @@ resource "azurerm_machine_learning_workspace" "this" {
   tags = local.tags
 }
 
-data "azurerm_role_definition" "blob_contributor" {
-  name = "Storage Blob Data Contributor"
-}
-
 
 
 # The Microsoft.MachineLearningServices resource provider automatically grants
@@ -113,10 +109,10 @@ data "azurerm_role_definition" "blob_contributor" {
 # a real Dev apply. Do not add an explicit workspace-storage role assignment.
 
 resource "azurerm_role_assignment" "workflow_storage" {
-  scope              = azurerm_storage_account.this.id
-  role_definition_id = data.azurerm_role_definition.blob_contributor.id
-  principal_id       = var.workflow_principal_object_id
-  principal_type     = "ServicePrincipal"
+  scope                = azurerm_storage_account.this.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = var.workflow_principal_object_id
+  principal_type       = "ServicePrincipal"
 }
 
 
