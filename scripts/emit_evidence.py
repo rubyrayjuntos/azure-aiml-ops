@@ -3,9 +3,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
+
+RBAC_PROPAGATION_RETRY_DELAYS_SECONDS = (5, 10, 20, 40, 40)
 
 TERMINAL = {"succeeded", "failed", "skipped"}
 EVENT_IDENTITY_VERSION = "1.0"
@@ -86,6 +89,35 @@ def parse_artifact(value: str) -> dict:
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from None
     return {"kind": kind, "uri": normalized}
+
+
+def write_blob_idempotent(client, payload: str) -> None:
+    """Upload payload if absent, tolerating RBAC propagation delay right after
+    a role assignment is created (transient 403 AuthorizationPermissionMismatch,
+    not a real permission gap). Falls back to an idempotent content check when
+    the blob already exists."""
+    from azure.core.exceptions import HttpResponseError
+
+    last_error: Exception | None = None
+    for delay in (0, *RBAC_PROPAGATION_RETRY_DELAYS_SECONDS):
+        if delay:
+            time.sleep(delay)
+        try:
+            client.upload_blob(payload, overwrite=False)
+            return
+        except HttpResponseError as exc:
+            last_error = exc
+            if exc.status_code == 403:
+                continue
+            if client.download_blob().readall().decode() != payload:
+                raise
+            return
+        except Exception:
+            if client.download_blob().readall().decode() != payload:
+                raise
+            return
+    assert last_error is not None
+    raise last_error
 
 
 def reject_sensitive_keys(value: object, path: str = "metadata") -> None:
@@ -174,11 +206,7 @@ def main() -> None:
             credential=DefaultAzureCredential(),
         )
         client = service.get_blob_client("platform-evidence", name)
-        try:
-            client.upload_blob(payload, overwrite=False)
-        except Exception:
-            if client.download_blob().readall().decode() != payload:
-                raise
+        write_blob_idempotent(client, payload)
     if args.state in TERMINAL:
         receipt = {
             "schema_version": "1.0",
@@ -207,11 +235,7 @@ def main() -> None:
                 receipt_path.write_text(receipt_payload, encoding="utf-8")
         else:
             receipt_client = service.get_blob_client("platform-evidence", receipt_name)
-            try:
-                receipt_client.upload_blob(receipt_payload, overwrite=False)
-            except Exception:
-                if receipt_client.download_blob().readall().decode() != receipt_payload:
-                    raise
+            write_blob_idempotent(receipt_client, receipt_payload)
     print(event_id)
 
 
