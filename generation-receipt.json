@@ -3,20 +3,21 @@
     "ml"
   ],
   "dependency_constraints_digest": "sha256:21f8a33510f047a43d60b3a9066baf9cb61b8e5f9dfdddd7263774787faec966",
-  "generated_files_digest": "sha256:9ca685feb1a83e1e9ea143355c1e08c76cc552a4bdab9c9860eb084a0481af0b",
-  "generation_id": "sha256:7c9a4cf3b049d8ed3dce1974e9748273528d53c9154e485b0bec45b037162220",
-  "manifest_digest": "sha256:61e2f5cafe93b65460886ef1189b7df5e9438f8d0c873ebb35f07db96262c588",
-  "platform_package_digest": "sha256:478bf08eb26bbabfda408880f47217ce55623b43c7288ce3bae1ba4f9f02566b",
-  "platform_source_commit": "96d17383fcadf0e2372f6f0ea64aa657fa6cb014",
+  "generated_files_digest": "sha256:e3f14de3bd67f1384c185e6f3432df4721f835dc3cb9c99f6b11eef475ee9a82",
+  "generation_id": "sha256:d2fc3f638d85fd8da098684fc415a9686ada7fc2c5c681f6dd8cdd2fd26fe3df",
+  "manifest_digest": "sha256:c01e4c7a6434584cbbebd1fac2ae2f2b92de9854d98d4f6322d1b2e944f8945d",
+  "platform_package_digest": "sha256:a107e628d415c1281a194f7dba86dbc200ae126c180a59b67bfa372ea092248f",
+  "platform_source_commit": "ef56abc1a8af0b18c8487763ae85267b738144ec",
   "platform_version": "1.0.0",
   "providers": {
+    "development": "local",
     "evidence": "azure_blob",
     "infrastructure": "terraform",
     "registry": "azure_ml",
-    "serving": "azure_ml_batch",
-    "training": "azure_ml"
+    "serving": "local_scoring",
+    "training": "local"
   },
   "receipt_schema_version": "1.0",
-  "resolved_plan_digest": "sha256:63f8ddfbdca984274265cf919cf7188726256fb2bfea87b628154465ffbdea81",
-  "template_digest": "sha256:ea83f6eec03bf82075209ae92050a1e72e0d3b1f837647a04ff1928a384b1ac0"
+  "resolved_plan_digest": "sha256:81679f6af97f1b59e40a60d975e19aaacfd9771c14731a258c48870487a9539e",
+  "template_digest": "sha256:3c81fe2fe3f9acf0af4402d9d3f40fabb439c2bb8a2aa4d34f61685846f5871a"
 }

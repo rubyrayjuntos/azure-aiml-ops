@@ -11,7 +11,29 @@ from typing import Any
 import yaml
 
 RECEIPT_NAME = "generation-receipt.json"
-IGNORED_RUNTIME_PARTS = {".git", ".terraform", ".pytest_cache", ".ruff_cache", "__pycache__"}
+MUTABLE_GOVERNANCE_PATHS = {
+    ".azure/deployment-plan.md",
+    ".azure/validate-status.json",
+}
+IGNORED_RUNTIME_PARTS = {
+    ".git",
+    ".terraform",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".local-runs",
+    "__pycache__",
+    "build",
+    "dist",
+    "mlruns",
+    "mlartifacts",
+    "mlflow.db",
+}
+
+
+def is_runtime_path(path: Path) -> bool:
+    return any(
+        part in IGNORED_RUNTIME_PARTS or part.endswith(".egg-info") for part in path.parts
+    )
 
 
 def digest_bytes(value: bytes) -> str:
@@ -30,7 +52,9 @@ def generated_files_digest(root: Path) -> str:
         relative = relative_path.as_posix()
         if relative == RECEIPT_NAME:
             continue
-        if any(part in IGNORED_RUNTIME_PARTS for part in relative_path.parts):
+        if relative in MUTABLE_GOVERNANCE_PATHS:
+            continue
+        if is_runtime_path(relative_path):
             continue
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")

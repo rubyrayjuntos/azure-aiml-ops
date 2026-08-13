@@ -6,10 +6,11 @@ from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
+from lifecycle_policy import promotion_allows_artifact
 
 
 def should_register(decision: dict) -> bool:
-    return decision.get("promote") is True
+    return promotion_allows_artifact(decision)
 
 
 def main() -> None:

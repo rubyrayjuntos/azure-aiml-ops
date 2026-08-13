@@ -6,7 +6,7 @@ Use Python 3.11 or 3.12. Azure ML training is pinned to Python 3.11.
 
 ## R1 boundary
 
-This repository contains Terraform infrastructure, Azure ML training/evaluation/conditional registration, explicit-version batch deployment, and project-local operational evidence. Online serving, monitoring, retraining, Foundry, Search, Databricks, and Bicep deployment are not included.
+This repository defaults Dev execution to a portable local lifecycle: prepare, train, evaluate, conditionally package, score, and emit local evidence. Terraform provisions the Azure ML workspace and project evidence boundary, but Azure training and batch compute are generated only when independently enabled with an explicit SKU. Local proof is not Azure ML lifecycle proof. Online serving, monitoring, retraining, Foundry, Search, Databricks, and Bicep deployment are not included.
 
 ## Validate
 
@@ -16,13 +16,16 @@ pytest
 ruff check .
 terraform -chdir=infra/terraform init -backend=false
 terraform -chdir=infra/terraform validate
+python scripts/run_local_lifecycle.py --output .local-runs/proof-1
 ```
 
 `platform/source-manifest.yaml` preserves canonicalized user intent without resolved defaults. `platform/resolved-plan.json` records every applied default and selected provider. `generation-receipt.json` attests to both files, the dependency constraints, templates, and the generated tree. Dependency changes are made through a new platform/template version and regeneration, never by editing a generated lock in place.
 
 `terraform-plan.yml` publishes exactly six files: `r1.tfplan`, `r1.tfplan.sha256`, `r1-plan.sanitized.json`, `r1-plan.sanitized.json.sha256`, `approval-metadata.json`, and `artifact-manifest.v1.json`. The manifest binds the plan to its human-reviewable representation, source and generation provenance, Terraform/provider versions, backend/state identity, execution context, and action summary. Raw Terraform JSON is deleted rather than uploaded. `terraform-apply.yml` is a separate manual dispatch that rejects incomplete or inconsistent artifacts, requires the reviewed plan run, attempt, exact SHA-256 digest, and an environment confirmation phrase, and applies without replanning. This implements `manual_dispatch_with_plan_digest`; it provides deliberate authorization and immutable-plan binding but does not claim independent reviewer separation when one human operates the repository.
 
-The Azure ML workspace uses a system-assigned identity and explicit identity-based default storage. Training and batch compute share a project-created user-assigned identity with the storage role required for model/MLflow input and output while Shared Key is disabled. Identity resources, roles, scopes, and dependencies are reviewable in the saved plan; newly created principal IDs are verified after apply.
+The Azure ML workspace uses a system-assigned identity and explicit identity-based default storage. If cluster compute is enabled, Terraform creates a project-owned user-assigned identity with the exact storage role required for model/MLflow input and output while Shared Key is disabled. No compute identity or cluster is created by the local-first base profile. Identity resources, roles, scopes, and dependencies are reviewable in the saved plan; newly created principal IDs are verified after apply.
+
+Cloud execution is a governed escalation. The generated training and batch workflows exist only when that fallback is enabled, use the manifest's exact instance type, have a one-node Dev ceiling, and require an explicit cost-aware authorization phrase. The factory never substitutes an unavailable SKU.
 
 Live deployment also requires an existing environment resource group, Terraform backend, GitHub OIDC identity, and environment-scoped permissions. The initial source push must not run an apply workflow. Establish and independently verify default-branch protection before exercising `oidc-smoke.yml` or any deployment workflow.
 
@@ -32,6 +35,7 @@ Run `aiml-scaffold doctor . --environment dev --no-cloud` for receipt and local-
 
 | Version | Created | Modified | Who | Notes |
 |---|---|---|---|---|
+| 0.6.0 | 2026-08-12 | 2026-08-12 | AIML-SCAFFOLD | Made Dev local-first, made Azure training and batch independent explicit opt-ins, capped Dev cloud compute at one node, and added the portable local lifecycle runner. |
 | 0.5.0 | 2026-08-11 | 2026-08-12 | AIML-SCAFFOLD | Added identity-based AML storage, project-owned compute identity, and the versioned six-file saved-plan review artifact. |
 | 0.4.0 | 2026-08-11 | 2026-08-12 | AIML-SCAFFOLD | Added digest-bound plan/apply authorization and a nonmutating GitHub OIDC proof workflow. |
 | 0.3.0 | 2026-08-11 | 2026-08-11 | AIML-SCAFFOLD | Added explicit Azure context and read-only doctor identity/backend/OIDC evidence boundaries. |

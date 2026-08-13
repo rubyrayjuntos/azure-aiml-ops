@@ -7,8 +7,25 @@ capabilities:
     - batch_serving
     - evidence
     provider: azure_ml
+cost_policy:
+  cloud_execution_requires_approval: true
+  default_max_nodes: 1
+  permit_spot_training: true
+  retain_idle_clusters: false
 environments:
 - dev
+execution:
+  batch:
+    cloud_fallback:
+      enabled: false
+    provider: local
+  development:
+    containerized: true
+    provider: local
+  training:
+    cloud_fallback:
+      enabled: false
+    provider: local
 infrastructure:
   azure:
     provider: terraform
@@ -29,10 +46,7 @@ product:
   owner: Ray Swan
 provider_extensions:
   azure_ml:
-    batch_compute_max_instances: 4
-    compute_size: Standard_D4s_v5
     location: eastus
-    training_compute_max_instances: 4
 shared_resources:
   azure_context:
     deployment_identity:

@@ -212,6 +212,23 @@ def _state_identity(path: Path) -> dict[str, Any]:
     return {"exists": True, "lineage": lineage, "serial": serial, "digest": _sha256(path)}
 
 
+def _validated_deployment_governance(project_root: Path) -> dict[str, str]:
+    plan_path = project_root / ".azure/deployment-plan.md"
+    status_path = project_root / ".azure/validate-status.json"
+    plan_text = plan_path.read_text(encoding="utf-8")
+    if not re.search(r"^> \*\*Status:\*\* Validated\s*$", plan_text, re.MULTILINE):
+        raise ValueError("deployment plan status is not Validated")
+    if "Not yet executed" in plan_text or "Not yet validated" in plan_text:
+        raise ValueError("deployment plan validation proof is incomplete")
+    validation_status = _read_json(status_path)
+    if validation_status != {"completedStep": "UpdateStatus"}:
+        raise ValueError("Azure validation workflow is incomplete")
+    return {
+        "deployment_plan_digest": _sha256(plan_path),
+        "validation_status_digest": _sha256(status_path),
+    }
+
+
 def create(args: argparse.Namespace) -> None:
     root = Path(args.artifact_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -238,11 +255,13 @@ def create(args: argparse.Namespace) -> None:
     for field in ("platform_source_commit", "platform_package_digest"):
         if field not in receipt:
             raise ValueError("generation receipt lacks immutable platform provenance")
+    governance = _validated_deployment_governance(Path(args.generation_receipt).resolve().parent)
     approval = {
         "approval_contract_version": SCHEMA_VERSION,
         "source_commit": args.source_commit,
         "platform_source_commit": receipt["platform_source_commit"],
         "platform_package_digest": receipt["platform_package_digest"],
+        **governance,
         "generation_id": receipt["generation_id"],
         "manifest_digest": receipt["manifest_digest"],
         "resolved_plan_digest": receipt["resolved_plan_digest"],
@@ -276,6 +295,7 @@ def create(args: argparse.Namespace) -> None:
         "source_commit": args.source_commit,
         "platform_source_commit": receipt["platform_source_commit"],
         "platform_package_digest": receipt["platform_package_digest"],
+        **governance,
         "platform_version": receipt["platform_version"],
         "generation_id": receipt["generation_id"],
         "manifest_digest": receipt["manifest_digest"],
@@ -379,6 +399,10 @@ def verify_artifact(
         == manifest.get("platform_source_commit"),
         "approval_platform_package": approval.get("platform_package_digest")
         == manifest.get("platform_package_digest"),
+        "approval_deployment_plan": approval.get("deployment_plan_digest")
+        == manifest.get("deployment_plan_digest"),
+        "approval_validation_status": approval.get("validation_status_digest")
+        == manifest.get("validation_status_digest"),
         "approval_environment": approval.get("target_environment")
         == manifest.get("target_environment"),
         "approval_run": approval.get("plan_run_id") == manifest.get("plan_run_id"),
@@ -396,6 +420,12 @@ def verify_artifact(
         ),
         "platform_package_digest": bool(
             re.fullmatch(r"sha256:[0-9a-f]{64}", manifest.get("platform_package_digest", ""))
+        ),
+        "deployment_plan_digest": bool(
+            re.fullmatch(r"sha256:[0-9a-f]{64}", manifest.get("deployment_plan_digest", ""))
+        ),
+        "validation_status_digest": bool(
+            re.fullmatch(r"sha256:[0-9a-f]{64}", manifest.get("validation_status_digest", ""))
         ),
     }
     if expected_run_id is not None:
@@ -421,6 +451,9 @@ def verify_artifact(
             manifest.get("backend", {}).get("state") == _state_identity(current_state_snapshot)
         )
     if project_root is not None:
+        governance = _validated_deployment_governance(project_root)
+        for key, value in governance.items():
+            checks[f"governance_{key}"] = manifest.get(key) == value
         receipt = _read_json(project_root / "generation-receipt.json")
         for key in (
             "platform_version",
@@ -481,6 +514,8 @@ def verify(args: argparse.Namespace) -> None:
                 "source_commit",
                 "platform_source_commit",
                 "platform_package_digest",
+                "deployment_plan_digest",
+                "validation_status_digest",
                 "generation_id",
                 "manifest_digest",
                 "resolved_plan_digest",

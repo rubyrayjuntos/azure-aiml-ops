@@ -98,24 +98,18 @@ resource "azurerm_machine_learning_workspace" "this" {
   tags = local.tags
 }
 
-# Azure ML requires a user-assigned compute identity for model and MLflow
-# input/output operations when Shared Key access is disabled. The identity is
-# project-owned; its principal ID is expected to be known only after apply.
-resource "azurerm_user_assigned_identity" "compute" {
-  name                = "id-${var.project_name}-${var.environment}-compute"
-  location            = var.location
-  resource_group_name = data.azurerm_resource_group.environment.name
-  tags                = local.tags
-}
-
 data "azurerm_role_definition" "blob_contributor" {
   name = "Storage Blob Data Contributor"
 }
 
-resource "azurerm_role_assignment" "compute_storage" {
+
+
+# Identity-based access to the workspace default storage requires an explicit
+# data-plane assignment for the workspace's system-assigned identity.
+resource "azurerm_role_assignment" "workspace_storage" {
   scope                            = azurerm_storage_account.this.id
   role_definition_id               = data.azurerm_role_definition.blob_contributor.id
-  principal_id                     = azurerm_user_assigned_identity.compute.principal_id
+  principal_id                     = azurerm_machine_learning_workspace.this.identity[0].principal_id
   principal_type                   = "ServicePrincipal"
   skip_service_principal_aad_check = true
 }
@@ -127,38 +121,6 @@ resource "azurerm_role_assignment" "workflow_storage" {
   principal_type     = "ServicePrincipal"
 }
 
-resource "azurerm_machine_learning_compute_cluster" "training" {
-  name                          = "cpu-training"
-  location                      = var.location
-  vm_priority                   = "LowPriority"
-  vm_size                       = var.training_compute_size
-  machine_learning_workspace_id = azurerm_machine_learning_workspace.this.id
-  scale_settings {
-    min_node_count                       = 0
-    max_node_count                       = var.training_compute_max_instances
-    scale_down_nodes_after_idle_duration = "PT5M"
-  }
-  identity {
-    type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.compute.id]
-  }
-  depends_on = [azurerm_role_assignment.compute_storage]
-}
 
-resource "azurerm_machine_learning_compute_cluster" "batch" {
-  name                          = "cpu-batch"
-  location                      = var.location
-  vm_priority                   = "Dedicated"
-  vm_size                       = var.training_compute_size
-  machine_learning_workspace_id = azurerm_machine_learning_workspace.this.id
-  scale_settings {
-    min_node_count                       = 0
-    max_node_count                       = var.batch_compute_max_instances
-    scale_down_nodes_after_idle_duration = "PT5M"
-  }
-  identity {
-    type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.compute.id]
-  }
-  depends_on = [azurerm_role_assignment.compute_storage]
-}
+
+

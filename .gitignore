@@ -3,6 +3,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .terraform/
+.local-runs/
+mlruns/
+mlartifacts/
+mlflow.db
 *.tfplan
 *.tfstate
 *.tfstate.*

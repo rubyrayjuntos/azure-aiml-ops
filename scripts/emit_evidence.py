@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 TERMINAL = {"succeeded", "failed", "skipped"}
@@ -99,11 +100,10 @@ def reject_sensitive_keys(value: object, path: str = "metadata") -> None:
 
 
 def main() -> None:
-    from azure.identity import DefaultAzureCredential
-    from azure.storage.blob import BlobServiceClient
-
     parser = argparse.ArgumentParser()
-    parser.add_argument("--storage-account", required=True)
+    destination = parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument("--storage-account")
+    destination.add_argument("--local-root")
     parser.add_argument("--operation-id", required=True)
     parser.add_argument("--provider", required=True)
     parser.add_argument("--capability", required=True)
@@ -157,17 +157,28 @@ def main() -> None:
     }
     event["payload_digest"] = digest(canonical(event))
     name = f"v1/azure-ai-ml-ops/dev/{now:%Y/%m/%d}/{args.operation_id}/{event_id}.json"
-    service = BlobServiceClient(
-        account_url=f"https://{args.storage_account}.blob.core.windows.net",
-        credential=DefaultAzureCredential(),
-    )
-    client = service.get_blob_client("platform-evidence", name)
     payload = canonical(event)
-    try:
-        client.upload_blob(payload, overwrite=False)
-    except Exception:
-        if client.download_blob().readall().decode() != payload:
-            raise
+    if args.local_root:
+        event_path = Path(args.local_root) / name
+        event_path.parent.mkdir(parents=True, exist_ok=True)
+        if event_path.exists() and event_path.read_text(encoding="utf-8") != payload:
+            raise ValueError("conflicting local evidence event")
+        if not event_path.exists():
+            event_path.write_text(payload, encoding="utf-8")
+    else:
+        from azure.identity import DefaultAzureCredential
+        from azure.storage.blob import BlobServiceClient
+
+        service = BlobServiceClient(
+            account_url=f"https://{args.storage_account}.blob.core.windows.net",
+            credential=DefaultAzureCredential(),
+        )
+        client = service.get_blob_client("platform-evidence", name)
+        try:
+            client.upload_blob(payload, overwrite=False)
+        except Exception:
+            if client.download_blob().readall().decode() != payload:
+                raise
     if args.state in TERMINAL:
         receipt = {
             "schema_version": "1.0",
@@ -178,15 +189,29 @@ def main() -> None:
             "state": args.state,
             "artifact_references": args.artifact,
         }
-        receipt_client = service.get_blob_client(
-            "platform-evidence", f"receipts/{args.operation_id}/receipt.json"
-        )
         receipt_payload = canonical(receipt)
-        try:
-            receipt_client.upload_blob(receipt_payload, overwrite=False)
-        except Exception:
-            if receipt_client.download_blob().readall().decode() != receipt_payload:
-                raise
+        receipt_name = (
+            f"receipts/azure-ai-ml-ops/dev/{args.operation_id}/receipt.json"
+        )
+        if args.local_root:
+            receipt_path = Path(args.local_root) / receipt_name
+            receipt_path.parent.mkdir(parents=True, exist_ok=True)
+            existing_receipt = (
+                receipt_path.read_text(encoding="utf-8")
+                if receipt_path.exists()
+                else None
+            )
+            if existing_receipt is not None and existing_receipt != receipt_payload:
+                raise ValueError("conflicting local operation receipt")
+            if not receipt_path.exists():
+                receipt_path.write_text(receipt_payload, encoding="utf-8")
+        else:
+            receipt_client = service.get_blob_client("platform-evidence", receipt_name)
+            try:
+                receipt_client.upload_blob(receipt_payload, overwrite=False)
+            except Exception:
+                if receipt_client.download_blob().readall().decode() != receipt_payload:
+                    raise
     print(event_id)
 
 
