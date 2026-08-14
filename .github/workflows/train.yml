@@ -36,7 +36,7 @@ jobs:
           python -m pip install azure-identity==1.19.0 azure-storage-blob==12.24.1
       - id: context
         run: |
-          STORAGE_ID=$(az ml workspace show -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --query storage_account -o tsv)
+          STORAGE_ID=$(az ml workspace show -g "rg-azure-ai-ml-ops-dev" -n "mlw-azure-ai-ml-ops-dev" --query storage_account -o tsv)
           echo "storage=${STORAGE_ID##*/}" >> "$GITHUB_OUTPUT"
       - name: Record started evidence
         run: >-
