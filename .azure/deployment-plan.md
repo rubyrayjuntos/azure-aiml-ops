@@ -1,6 +1,6 @@
 # Azure AI ML Ops R1 Dev infrastructure deployment plan
 
-> **Status:** Validated
+> **Status:** Planning
 
 Generated deterministically by AIML-SCAFFOLD platform 1.0.0.
 
@@ -66,51 +66,39 @@ Complete live, read-only quota and inventory checks before approving this plan. 
 
 | Resource or quota | Planned | Current | Total after deployment | Limit | Result |
 |---|---:|---:|---:|---:|---|
-| Azure ML clusters | 0 more (already live) | 2 | 2 | 200 | ARM inventory; pass |
-| VM-family vCPUs (`Standard_D2s_v3`) | 0 more | Same documented condition as the prior two candidates | Not measured | See result | Unrelated to this fix (cosmetic idle-duration format only) |
-| Azure ML workspace | 0 more (already live) | 3 | 3 | No count quota exposed by `az quota` | ARM inventory; pass |
-| Storage account | 0 more (already live) | 7 | 7 | 250 per region/subscription default | ARM inventory; pass |
-| Key Vault | 0 more (already live) | 4 | 4 | No count quota exposed | ARM inventory; pass |
-| Log Analytics workspace | 0 more (already live) | 2 | 2 | No applicable count quota surfaced | ARM inventory; pass |
-| Application Insights component | 0 more (already live) | 4 | 4 | No component-count quota surfaced | ARM inventory; pass |
-| User-assigned identity | 0 more (already live) | 3 | 3 | Provider limit or documented boundary | ARM inventory; pass |
-| Azure role assignments | 0 more (already live) | 57 | 57 | 4,000 per subscription | ARM inventory; pass |
+| Azure ML clusters | 2 | Not measured | Not measured | 200 | Not exercised |
+| Azure ML serverless training | Disabled | Not measured | Not measured | Exact SKU quota when enabled | Not exercised |
+| VM-family vCPUs | Exact explicit-SKU discovery required | Not measured | Not measured | Not measured | Not exercised |
+| Azure ML workspace | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Storage account | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Key Vault | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Log Analytics workspace | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Application Insights component | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| User-assigned identity | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Azure role assignments | 3 | Not measured | Not measured | 4,000 per subscription | Not exercised |
 
 ## 7. Validation checklist
 
-- [x] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
-- [x] Verify generation receipt and immutable platform/package provenance.
-- [x] Run generated tests and Ruff.
-- [x] Run the local lifecycle and retain local-only evidence without claiming Azure execution. (Not repeated; unaffected — infra-formatting-only fix.)
-- [x] Parse generated YAML and run Actionlint.
-- [x] Run `terraform fmt -check -recursive`.
-- [x] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
-- [x] Review identity and RBAC references statically.
-- [x] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
-- [x] Populate validation proof and set `Validated` through the documented Azure validation workflow, including the same known-failing compute check as before.
+- [ ] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
+- [ ] Verify generation receipt and immutable platform/package provenance.
+- [ ] Run generated tests and Ruff.
+- [ ] Run the local lifecycle and retain local-only evidence without claiming Azure execution.
+- [ ] Parse generated YAML and run Actionlint.
+- [ ] Run `terraform fmt -check -recursive`.
+- [ ] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
+- [ ] Review identity and RBAC references statically.
+- [ ] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
+- [ ] Populate validation proof and set `Validated` only through the documented Azure validation workflow.
 
 ## 8. Validation proof
 
-Third cloud-compute candidate, correcting a cosmetic Terraform drift: plan run `31843274148` showed 2 unexpected updates on both compute clusters (`scale_down_nodes_after_idle_duration` `PT120S` in config vs. `PT2M` in state — same duration, Azure's canonical form). Fixed in platform commit `22a514ced8cedcbf7147671ab80cd33d15840397` to render `PT2M` directly, matching Azure's confirmed normalization. Unrelated to the compute-quota question; `compute_sku_availability`/`compute_quota_sufficiency` are expected to keep failing statically, same documented condition as every candidate since cloud compute was enabled.
+Not yet executed. Record the exact commands, sanitized results, and timestamps here before setting status to `Validated`.
 
 | Check | Command | Result | Timestamp |
 |---|---|---|---|
-| Reproducible platform wheel | Two independent clean-room builds, `SOURCE_DATE_EPOCH` pinned to the commit timestamp | Passed; byte-identical, `sha256:d1ea558ed7304eb470dbf31f877644c024d0238b1f62fcb08129f28866153012` | 2026-08-14T21:40:00Z |
-| Deterministic generation | Two independent `aiml-scaffold generate` runs from that wheel | Passed; byte-identical; confirmed `scale_down_nodes_after_idle_duration = "PT2M"` in the rendered `main.tf` for both clusters | 2026-08-14T21:41:00Z |
-| Offline doctor | `aiml-scaffold doctor --environment dev --no-cloud` | Passed | 2026-08-14T21:42:00Z |
-| Python lint | `ruff check .` | Passed, no findings | 2026-08-14T21:42:00Z |
-| YAML parse | Parsed every generated `.yml`/`.yaml` | Passed, 0 failures | 2026-08-14T21:42:00Z |
-| Actionlint | `actionlint .github/workflows/*.yml` | Passed, no findings | 2026-08-14T21:42:00Z |
-| Terraform static validation | `terraform fmt -check -recursive`; `terraform init -backend=false -lockfile=readonly`; `terraform validate` | Passed with AzureRM 4.81.0 | 2026-08-14T21:42:00Z |
-| Scenario and secret scan | Grep for `churn`/`taxi` scenario leakage and credential patterns | Passed; no leakage | 2026-08-14T21:43:00Z |
-| Generated tests and lint (pinned environment) | CI run [`31843788930`](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31843788930) on merge commit `58db97f778da451f3793d3163e6597e21adcb224` | Passed | 2026-08-14T21:45:14Z |
-| Static RBAC review | No RBAC changes in this fix; unaffected | Passed | 2026-08-14T21:46:00Z |
-| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-14T21:47:00Z |
-| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; counts unchanged from the prior candidate (no new infra), recorded in section 6 | 2026-08-14T21:47:52Z |
-| Compute SKU availability / quota sufficiency | Same `doctor` check | Failed, same documented reason as every candidate since cloud compute was enabled — not a regression from this fix | 2026-08-14T21:47:52Z |
-| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | `overall_status: failed` — same profile as the prior two candidates | 2026-08-14T21:47:52Z |
+| Azure validation workflow | Not exercised | Not exercised | Not exercised |
 
-**Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after fixing the idle-duration format.
+**Validated by:** Not yet validated.
 
 ## 9. Deployment authorization and stop conditions
 
