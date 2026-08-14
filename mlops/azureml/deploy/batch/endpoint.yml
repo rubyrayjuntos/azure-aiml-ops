@@ -1,0 +1,4 @@
+$schema: https://azuremlschemas.azureedge.net/latest/batchEndpoint.schema.json
+name: azure-ai-ml-ops-batch
+description: Explicit-version R1 batch endpoint for azure-ai-ml-ops.
+auth_mode: aad_token

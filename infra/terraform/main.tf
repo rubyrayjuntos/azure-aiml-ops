@@ -99,6 +99,24 @@ resource "azurerm_machine_learning_workspace" "this" {
 }
 
 
+# Enabled Azure ML cluster compute requires a user-assigned compute identity for model and MLflow
+# input/output operations when Shared Key access is disabled. The identity is
+# project-owned; its principal ID is expected to be known only after apply.
+resource "azurerm_user_assigned_identity" "compute" {
+  name                = "id-${var.project_name}-${var.environment}-compute"
+  location            = var.location
+  resource_group_name = data.azurerm_resource_group.environment.name
+  tags                = local.tags
+}
+
+resource "azurerm_role_assignment" "compute_storage" {
+  scope                            = azurerm_storage_account.this.id
+  role_definition_name             = "Storage Blob Data Contributor"
+  principal_id                     = azurerm_user_assigned_identity.compute.principal_id
+  principal_type                   = "ServicePrincipal"
+  skip_service_principal_aad_check = true
+}
+
 
 # The Microsoft.MachineLearningServices resource provider automatically grants
 # the workspace's system-assigned identity Storage Blob Data Contributor (and
@@ -116,5 +134,41 @@ resource "azurerm_role_assignment" "workflow_storage" {
 }
 
 
+resource "azurerm_machine_learning_compute_cluster" "training" {
+  name                          = "cpu-training"
+  location                      = var.location
+  vm_priority                   = "Dedicated"
+  vm_size                       = "Standard_D2s_v3"
+  machine_learning_workspace_id = azurerm_machine_learning_workspace.this.id
+  scale_settings {
+    min_node_count                       = 0
+    max_node_count                       = 1
+    scale_down_nodes_after_idle_duration = "PT120S"
+  }
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.compute.id]
+  }
+  depends_on = [azurerm_role_assignment.compute_storage]
+}
 
+
+
+resource "azurerm_machine_learning_compute_cluster" "batch" {
+  name                          = "cpu-batch"
+  location                      = var.location
+  vm_priority                   = "Dedicated"
+  vm_size                       = "Standard_D2s_v3"
+  machine_learning_workspace_id = azurerm_machine_learning_workspace.this.id
+  scale_settings {
+    min_node_count                       = 0
+    max_node_count                       = 1
+    scale_down_nodes_after_idle_duration = "PT120S"
+  }
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.compute.id]
+  }
+  depends_on = [azurerm_role_assignment.compute_storage]
+}
 

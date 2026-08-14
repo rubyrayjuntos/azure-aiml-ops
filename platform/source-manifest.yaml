@@ -17,14 +17,24 @@ environments:
 execution:
   batch:
     cloud_fallback:
-      enabled: false
+      enabled: true
+      idle_seconds_before_scaledown: 120
+      instance_type: Standard_D2s_v3
+      max_instances: 1
+      min_instances: 0
+      mode: azure_ml_cluster
+      tier: dedicated
     provider: local
   development:
     containerized: true
     provider: local
   training:
     cloud_fallback:
-      enabled: false
+      enabled: true
+      instance_type: Standard_D2s_v3
+      max_instances: 1
+      mode: azure_ml_cluster
+      tier: dedicated
     provider: local
 infrastructure:
   azure:
