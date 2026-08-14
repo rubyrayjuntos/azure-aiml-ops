@@ -232,6 +232,10 @@ jobs:
         run: |
           workspace_principal=$(terraform -chdir=infra/terraform output -raw workspace_identity_principal_id)
 
+          compute_identity_id=$(terraform -chdir=infra/terraform output -raw compute_identity_id)
+          compute_principal=$(terraform -chdir=infra/terraform output -raw compute_identity_principal_id)
+          compute_role_id=$(terraform -chdir=infra/terraform output -raw compute_storage_role_assignment_id)
+
           workflow_role_id=$(terraform -chdir=infra/terraform output -raw workflow_storage_role_assignment_id)
           resource_group_id=$(terraform -chdir=infra/terraform output -raw resource_group_id)
 
@@ -239,7 +243,14 @@ jobs:
             --ids "${resource_group_id}/providers/Microsoft.MachineLearningServices/workspaces/${{ steps.outputs.outputs.workspace }}" \
             --api-version 2025-06-01 --query identity.principalId -o tsv)
 
+          actual_compute_principal=$(az resource show \
+            --ids "$compute_identity_id" --api-version 2023-01-31 \
+            --query properties.principalId -o tsv)
+
           test "${actual_workspace_principal,,}" = "${workspace_principal,,}"
+
+          test "${actual_compute_principal,,}" = "${compute_principal,,}"
+          test "$(az role assignment list --all --query "[?id=='$compute_role_id' && roleDefinitionName=='Storage Blob Data Contributor'] | length(@)" -o tsv)" = "1"
 
           test "$(az role assignment list --all --query "[?id=='$workflow_role_id' && roleDefinitionName=='Storage Blob Data Contributor'] | length(@)" -o tsv)" = "1"
           test "$(az role assignment list --assignee-object-id "$workspace_principal" --scope "$resource_group_id" --role "Azure AI Administrator" --query 'length(@)' -o tsv)" = "1"

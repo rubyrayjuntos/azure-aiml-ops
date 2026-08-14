@@ -6,14 +6,14 @@ execution:
     provider: local
     containerized: true
   training_cloud:
-    enabled: false
-    mode: null
-    instance_type: null
+    enabled: true
+    mode: azure_ml_cluster
+    instance_type: Standard_D2s_v3
     max_instances: 1
   batch_cloud:
-    enabled: false
-    mode: null
-    instance_type: null
+    enabled: true
+    mode: azure_ml_cluster
+    instance_type: Standard_D2s_v3
     max_instances: 1
 cost_policy:
   cloud_execution_requires_approval: true
