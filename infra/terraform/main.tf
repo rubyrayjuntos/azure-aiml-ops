@@ -143,7 +143,7 @@ resource "azurerm_machine_learning_compute_cluster" "training" {
   scale_settings {
     min_node_count                       = 0
     max_node_count                       = 1
-    scale_down_nodes_after_idle_duration = "PT120S"
+    scale_down_nodes_after_idle_duration = "PT2M"
   }
   identity {
     type         = "UserAssigned"
@@ -163,7 +163,7 @@ resource "azurerm_machine_learning_compute_cluster" "batch" {
   scale_settings {
     min_node_count                       = 0
     max_node_count                       = 1
-    scale_down_nodes_after_idle_duration = "PT120S"
+    scale_down_nodes_after_idle_duration = "PT2M"
   }
   identity {
     type         = "UserAssigned"
