@@ -40,7 +40,7 @@ jobs:
           python -m pip install azure-identity==1.19.0 azure-storage-blob==12.24.1
       - id: context
         run: |
-          STORAGE_ID=$(az ml workspace show -g "rg-azure-ai-ml-ops-dev" -n "mlw-azure-ai-ml-ops-dev" --query storage_account -o tsv)
+          STORAGE_ID=$(az ml workspace show -g "rg-azure-ai-ml-ops-dev" -n "mlw-azure-ai-ml-ops-dev" --query storage_account -o tsv --only-show-errors)
           echo "storage=${STORAGE_ID##*/}" >> "$GITHUB_OUTPUT"
       - name: Record started evidence
         run: >-
@@ -52,7 +52,7 @@ jobs:
         run: |
           az ml batch-endpoint create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --file mlops/azureml/deploy/batch/endpoint.yml
           az ml batch-deployment create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --file mlops/azureml/deploy/batch/deployment.yml --set model="azureml:azure-ai-ml-ops-model:${{ inputs.model_version }}"
-          JOB_ID=$(az ml batch-endpoint invoke -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name "azure-ai-ml-ops-batch" --input "${{ inputs.input_data_uri }}" --input-type uri_file --query name -o tsv)
+          JOB_ID=$(az ml batch-endpoint invoke -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name "azure-ai-ml-ops-batch" --input "${{ inputs.input_data_uri }}" --input-type uri_file --query name -o tsv --only-show-errors)
           echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
           az ml job stream -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name "$JOB_ID"
       - name: Record terminal evidence
