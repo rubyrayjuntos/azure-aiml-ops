@@ -96,6 +96,17 @@ resource "azurerm_machine_learning_workspace" "this" {
   public_network_access_enabled = var.environment != "prod"
   identity { type = "SystemAssigned" }
   tags = local.tags
+
+  # Azure ML auto-provisions and attaches a Container Registry the first
+  # time a job builds a custom environment image. container_registry_id
+  # is a ForceNew attribute in the AzureRM provider, so without this the
+  # next plan after any successful custom-environment job would want to
+  # destroy and recreate the entire workspace just to reconcile a field
+  # Terraform never set and does not own. Confirmed live: run 31887608529's
+  # prepare step triggered this auto-attachment.
+  lifecycle {
+    ignore_changes = [container_registry_id]
+  }
 }
 
 
