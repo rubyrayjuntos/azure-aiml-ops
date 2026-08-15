@@ -1,6 +1,6 @@
 # Azure AI ML Ops R1 Dev infrastructure deployment plan
 
-> **Status:** Validated
+> **Status:** Planning
 
 Generated deterministically by AIML-SCAFFOLD platform 1.0.0.
 
@@ -78,39 +78,39 @@ Complete live, read-only quota and inventory checks before approving this plan. 
 
 ## 7. Validation checklist
 
-- [x] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
-- [x] Verify generation receipt and immutable platform/package provenance.
-- [x] Run generated tests and Ruff.
-- [x] Run the local lifecycle and retain local-only evidence without claiming Azure execution. (Not repeated; unaffected — lifecycle-block fix only, no resource behavior change.)
-- [x] Parse generated YAML and run Actionlint.
-- [x] Run `terraform fmt -check -recursive`.
-- [x] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
-- [x] Review identity and RBAC references statically.
-- [x] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
-- [x] Populate validation proof and set `Validated` through the documented Azure validation workflow, including the same known-failing static compute-SKU check as before.
+- [ ] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
+- [ ] Verify generation receipt and immutable platform/package provenance.
+- [ ] Run generated tests and Ruff.
+- [ ] Run the local lifecycle and retain local-only evidence without claiming Azure execution.
+- [ ] Parse generated YAML and run Actionlint.
+- [ ] Run `terraform fmt -check -recursive`.
+- [ ] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
+- [ ] Review identity and RBAC references statically.
+- [ ] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
+- [ ] Populate validation proof and set `Validated` only through the documented Azure validation workflow.
 
 ## 8. Validation proof
 
-**Eighth candidate — apply-time governance caught a destructive plan before it ran.** Re-dispatching `terraform-plan` after the seventh candidate (`azureml-mlflow`) merged produced a plan with `3 to add, 0 to change, 3 to destroy` — the first non-no-op plan since cloud compute was enabled. **This was not applied.** Investigation of the raw plan output showed `azurerm_machine_learning_workspace.this` `must be replaced` because `container_registry_id` changed from a live ACR resource ID to `null`, cascading a forced replacement of both `azurerm_machine_learning_compute_cluster` resources, which depend on the workspace ID. Root cause: the seventh candidate's live job run (`31887608529`, `prepare` step) was the first job to ever build this project's custom training-environment Docker image, and Azure ML auto-provisions and attaches a Container Registry to the workspace the first time that happens — a normal, expected Azure ML behavior entirely outside Terraform's ownership. `container_registry_id` is a `ForceNew` attribute in the AzureRM provider, so any drift on it (even from a field Terraform never set) forces the whole resource to replace rather than update in place. Applying this plan would have destroyed and recreated the live workspace and both compute clusters for no functional reason. Fixed by adding `lifecycle { ignore_changes = [container_registry_id] }` to the workspace resource (platform commit `5ea9573`) — Terraform never selects, creates, or manages this registry; it remains entirely Azure ML's own auto-provisioned resource, consistent with this project's one-resource-one-owner rule.
+**Ninth candidate — the mlflow fix wasn't actually reaching the job.** After the eighth candidate applied cleanly (no-op plan confirmed, `RunningNodeCount:1` cluster intact), `train.yml` was re-dispatched and reached the same `prepare`-succeeds/`train`-fails pattern, and `train`'s error was byte-for-byte the same `UnsupportedModelRegistryStoreURIException` as before the seventh candidate's `azureml-mlflow` fix — despite that fix being live on `main`. Investigation: `az ml environment list` showed the training environment now has two versions (`1` and `2` — version `2` built when the `register` step created it from the corrected `train-conda.yml`), but `pipeline.yml` hardcoded `environment: azureml:azure-ai-ml-ops-train-env:1` on all four steps (`prepare`/`train`/`evaluate`/`register`), so every pipeline run kept resolving to the original, pre-fix environment build regardless of how many times `train-conda.yml` changed. `train-env.yml` itself never sets an explicit version — `az ml environment create` auto-increments on content change — so the hardcoded `:1` was inconsistent with that design from the start and was always going to go stale the first time the environment changed. Changed all four references to `azureml:azure-ai-ml-ops-train-env@latest` (platform commit `1717b64`).
 
 | Check | Command | Result | Timestamp |
 |---|---|---|---|
-| Reproducible platform wheel | Two independent clean-room builds (`build/`/`dist/` removed first), `SOURCE_DATE_EPOCH` pinned to the commit timestamp | Passed; byte-identical, `sha256:a53f0f95a30e048fa8e9422121828f5d628d042ba3109eae5e5e85a2f6d95577` | 2026-08-15T16:12:00Z |
-| Deterministic generation | Two independent `aiml-scaffold generate` runs from that wheel | Passed; byte-identical; confirmed `lifecycle { ignore_changes = [container_registry_id] }` present in the rendered `main.tf` | 2026-08-15T16:13:00Z |
-| Offline doctor | `aiml-scaffold doctor --environment dev --no-cloud` | Passed | 2026-08-15T16:14:00Z |
-| Python lint | `ruff check .` | Passed, no findings | 2026-08-15T16:14:00Z |
-| YAML parse | Parsed every generated `.yml`/`.yaml` | Passed, 0 failures | 2026-08-15T16:14:00Z |
-| Actionlint | `actionlint .github/workflows/*.yml` | Passed, no findings | 2026-08-15T16:14:00Z |
-| Terraform static validation | `terraform fmt -check -recursive`; `terraform init -backend=false -lockfile=readonly`; `terraform validate` | Passed with AzureRM 4.81.0 | 2026-08-15T16:15:00Z |
-| Scenario and secret scan | Grep for `churn`/`taxi` scenario leakage and credential patterns | Passed; no leakage | 2026-08-15T16:15:00Z |
-| Generated tests and lint (pinned environment) | CI run [`31894888051`](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31894888051) on merge commit `1c575f7` | Passed | 2026-08-15T16:10:00Z |
-| Static RBAC review | No RBAC changes in this fix; unaffected | Passed | 2026-08-15T16:16:00Z |
-| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-15T16:16:00Z |
-| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; counts unchanged (no new infra) | 2026-08-15T16:15:50Z |
-| Compute SKU availability / quota sufficiency (static `doctor` check) | Same `doctor` check | Still fails statically — same documented, non-conclusive condition | 2026-08-15T16:15:50Z |
-| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | `overall_status: failed` — same profile as every prior candidate: only the expected `active_identity_match` warning and the two known static compute checks | 2026-08-15T16:15:50Z |
+| Reproducible platform wheel | Two independent clean-room builds (`build/`/`dist/` removed first), `SOURCE_DATE_EPOCH` pinned to the commit timestamp | Passed; byte-identical, `sha256:8beb5ba62dec417532579f686e8334d2c23e5506d7067a9bf7896ff0da6a6d9c` | 2026-08-15T16:38:00Z |
+| Deterministic generation | Two independent `aiml-scaffold generate` runs from that wheel | Passed; byte-identical; confirmed `@latest` present on all four `environment:` references in the rendered `pipeline.yml` | 2026-08-15T16:39:00Z |
+| Offline doctor | `aiml-scaffold doctor --environment dev --no-cloud` | Passed | 2026-08-15T16:40:00Z |
+| Python lint | `ruff check .` | Passed, no findings | 2026-08-15T16:40:00Z |
+| YAML parse | Parsed every generated `.yml`/`.yaml` | Passed, 0 failures | 2026-08-15T16:40:00Z |
+| Actionlint | `actionlint .github/workflows/*.yml` | Passed, no findings | 2026-08-15T16:40:00Z |
+| Terraform static validation | `terraform fmt -check -recursive`; `terraform init -backend=false -lockfile=readonly`; `terraform validate` | Passed with AzureRM 4.81.0; infra unchanged (pipeline YAML only) | 2026-08-15T16:41:00Z |
+| Scenario and secret scan | Grep for `churn`/`taxi` scenario leakage and credential patterns | Passed; no leakage | 2026-08-15T16:41:00Z |
+| Generated tests and lint (pinned environment) | CI on this PR | Recorded after merge | Pending |
+| Static RBAC review | No RBAC changes in this fix; unaffected | Passed | 2026-08-15T16:42:00Z |
+| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-15T16:42:00Z |
+| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; counts unchanged (no new infra) | 2026-08-15T16:42:00Z |
+| Compute SKU availability / quota sufficiency (static `doctor` check) | Same `doctor` check | Still fails statically — same documented, non-conclusive condition | 2026-08-15T16:43:00Z |
+| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | Recorded after this candidate's authenticated run | Pending |
 
-**Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after adding the `container_registry_id` lifecycle exception.
+**Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after fixing the stale environment-version reference.
 
 ## 9. Deployment authorization and stop conditions
 
