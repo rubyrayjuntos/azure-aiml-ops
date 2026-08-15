@@ -1,6 +1,6 @@
 # Azure AI ML Ops R1 Dev infrastructure deployment plan
 
-> **Status:** Validated
+> **Status:** Planning
 
 Generated deterministically by AIML-SCAFFOLD platform 1.0.0.
 
@@ -66,53 +66,57 @@ Complete live, read-only quota and inventory checks before approving this plan. 
 
 | Resource or quota | Planned | Current | Total after deployment | Limit | Result |
 |---|---:|---:|---:|---:|---|
-| Azure ML clusters | 0 more (already live) | 2 | 2 | 200 | ARM inventory; pass |
-| VM-family vCPUs (`Standard_D2s_v3`) | 0 more | Same documented condition as the prior three candidates | Not measured | See result | Unrelated to this fix (CLI stdout-suppression only) |
-| Azure ML workspace | 0 more (already live) | 3 | 3 | No count quota exposed by `az quota` | ARM inventory; pass |
-| Storage account | 0 more (already live) | 5 | 5 | 250 per region/subscription default | ARM inventory; pass |
-| Key Vault | 0 more (already live) | 3 | 3 | No count quota exposed | ARM inventory; pass |
-| Log Analytics workspace | 0 more (already live) | 3 | 3 | No applicable count quota surfaced | ARM inventory; pass |
-| Application Insights component | 0 more (already live) | 3 | 3 | No component-count quota surfaced | ARM inventory; pass |
-| User-assigned identity | 0 more (already live) | 3 | 3 | Provider limit or documented boundary | ARM inventory; pass |
-| Azure role assignments | 0 more (already live) | 57 | 57 | 4,000 per subscription | ARM inventory; pass |
-
-Storage account and Key Vault counts dropped from the prior candidate (7→5, 4→3) due to the separately authorized cost-hygiene cleanup of the sibling `azure-mlops` taxi reference project (unused `ml-registry` resource group deletion); unrelated to this fix.
+| Azure ML clusters | 2 | Not measured | Not measured | 200 | Not exercised |
+| Azure ML serverless training | Disabled | Not measured | Not measured | Exact SKU quota when enabled | Not exercised |
+| VM-family vCPUs | Exact explicit-SKU discovery required | Not measured | Not measured | Not measured | Not exercised |
+| Azure ML workspace | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Storage account | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Key Vault | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Log Analytics workspace | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Application Insights component | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| User-assigned identity | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Azure role assignments | 3 | Not measured | Not measured | 4,000 per subscription | Not exercised |
 
 ## 7. Validation checklist
 
-- [x] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
-- [x] Verify generation receipt and immutable platform/package provenance.
-- [x] Run generated tests and Ruff.
-- [x] Run the local lifecycle and retain local-only evidence without claiming Azure execution. (Not repeated; unaffected — workflow-only CLI-flag fix.)
-- [x] Parse generated YAML and run Actionlint.
-- [x] Run `terraform fmt -check -recursive`.
-- [x] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
-- [x] Review identity and RBAC references statically.
-- [x] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
-- [x] Populate validation proof and set `Validated` through the documented Azure validation workflow, including the same known-failing compute check as before.
+- [ ] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
+- [ ] Verify generation receipt and immutable platform/package provenance.
+- [ ] Run generated tests and Ruff.
+- [ ] Run the local lifecycle and retain local-only evidence without claiming Azure execution.
+- [ ] Parse generated YAML and run Actionlint.
+- [ ] Run `terraform fmt -check -recursive`.
+- [ ] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
+- [ ] Review identity and RBAC references statically.
+- [ ] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
+- [ ] Populate validation proof and set `Validated` only through the documented Azure validation workflow.
 
 ## 8. Validation proof
 
-Fourth cloud-compute candidate, correcting a real workflow bug found via the first live `train.yml` dispatch: after the `-w`/`-n` flag fix, the workflow reached `az ml workspace show` but the az CLI's extension auto-upgrade check printed `WARNING` lines to stdout during that call, and `$(...)` captured those lines instead of the tsv value — observed live as a corrupted `--storage-account "utils.py)"` argument to `emit_evidence.py`. The same pattern affects `az ml job create`, `az ml batch-endpoint invoke`, and the second `az ml workspace show` in `deploy-batch.yml`. Fixed by adding `--only-show-errors` to all four command substitutions (platform commit `c5c67ed90ff2e570771714ae894408788d19fd43`). Unrelated to the compute-quota question; `compute_sku_availability`/`compute_quota_sufficiency` are expected to keep failing statically, same documented condition as every candidate since cloud compute was enabled.
+Fifth and sixth candidates, both real bugs found only through live `train.yml` dispatch after the fourth candidate (`--only-show-errors`, platform commit `c5c67ed`) was applied:
+
+- **Fifth (contaminated build, platform commit `7514cae`):** run [31868115511](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31868115511)'s `terraform-plan` "Verify immutable generation provenance" step correctly failed — the merged `generation-receipt.json`'s `generated_files_digest` didn't match this repo's tree. Root cause: the platform worktree's `build/` scratch directory was stale (untouched since before this session) and contained an orphaned template, `product-manifest.yaml.j2`, absent from git history entirely; `setuptools build_py` doesn't prune such orphans from an incremental build, so `python -m build` silently bundled it, and every subsequent generate rendered an untracked `product-manifest.yaml` into the output root. Fixed by removing `build/`/`dist/` and rebuilding truly clean-room; corrected the receipt with no other content change. No Terraform impact — confirmed by the immediate re-run of `terraform-plan` (31868911441) showing 0 create/0 update/0 delete/0 replace, 12 no_op, and applied cleanly (run 31869317167).
+- **Sixth (broken `az ml` extension pin, platform commit `4d08188`):** the first real `train.yml` dispatch after apply (run 31869376038) got past `az ml workspace show` cleanly (confirming the fourth candidate's fix works) but failed at "Record started evidence" with a corrupted `--storage-account "utils.py)"`. Traced to `az extension add --name ml --version 2.33.1 --yes`: that pinned version bundles a `marshmallow` release that conflicts with the CLI environment, and on the first `az ml` call after a fresh install it prints a raw Python `ImportError` directly to stdout — `cannot import name 'FieldInstanceResolutionError' from 'marshmallow.utils' (.../marshmallow/utils.py)` — which bypasses `--only-show-errors` entirely since it never goes through az's own logger. `$(...)` captured it alongside the real value, and `${VAR##*/}` stripped to the last `/` in the whole multi-line capture, landing inside `.../marshmallow/utils.py)` and producing the corrupted `utils.py)`. Confirmed locally: a fresh install of 2.33.1 reproduces the ImportError on the first `az ml` call; a fresh install of 2.44.1 is clean on both the first and second call. Repinned both workflows to 2.44.1. Unrelated to the compute-quota question; `compute_sku_availability`/`compute_quota_sufficiency` are expected to keep failing statically, same documented condition as every candidate since cloud compute was enabled.
 
 | Check | Command | Result | Timestamp |
 |---|---|---|---|
-| Reproducible platform wheel | Two independent clean-room builds, `SOURCE_DATE_EPOCH` pinned to the commit timestamp | Passed; byte-identical, `sha256:7c23acc39797be07d454da0d90fad03494530deb6829bfbb584abfb9c695f412` | 2026-08-15T05:30:00Z |
-| Deterministic generation | Two independent `aiml-scaffold generate` runs from that wheel | Passed; byte-identical; confirmed `--only-show-errors` present on all four command substitutions in both workflows | 2026-08-15T05:31:00Z |
-| Offline doctor | `aiml-scaffold doctor --environment dev --no-cloud` | Passed | 2026-08-15T05:32:00Z |
-| Python lint | `ruff check .` | Passed, no findings | 2026-08-15T05:32:00Z |
-| YAML parse | Parsed every generated `.yml`/`.yaml` | Passed, 0 failures | 2026-08-15T05:32:00Z |
-| Actionlint | `actionlint .github/workflows/*.yml` | Passed, no findings | 2026-08-15T05:32:00Z |
-| Terraform static validation | `terraform fmt -check -recursive`; `terraform init -backend=false -lockfile=readonly`; `terraform validate` | Passed with AzureRM 4.81.0 | 2026-08-15T05:33:00Z |
-| Scenario and secret scan | Grep for `churn`/`taxi` scenario leakage and credential patterns | Passed; no leakage | 2026-08-15T05:33:00Z |
-| Generated tests and lint (pinned environment) | CI run [`31846441252`](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31846441252) on merge commit `9ce75e2` | Passed | 2026-08-15T05:36:00Z |
-| Static RBAC review | No RBAC changes in this fix; unaffected | Passed | 2026-08-15T05:37:00Z |
-| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-15T05:38:00Z |
-| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; counts unchanged by this fix (no new infra); storage/Key Vault drop reflects the separately authorized taxi-project cleanup, recorded in section 6 | 2026-08-15T05:45:00Z |
-| Compute SKU availability / quota sufficiency | Same `doctor` check | Failed, same documented reason as every candidate since cloud compute was enabled — not a regression from this fix | 2026-08-15T05:52:01Z |
-| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | `overall_status: failed` — same profile as the prior three candidates: only the expected `active_identity_match` warning and the two known compute checks | 2026-08-15T05:52:01Z |
+| Reproducible platform wheel | Two independent clean-room builds (`build/`/`dist/` removed first), `SOURCE_DATE_EPOCH` pinned to the commit timestamp | Passed; byte-identical, `sha256:226e2bdafacc95d0f1a4774490d2cd6489cf7ae2be1179c9475136da785d3ca6` | 2026-08-15T06:35:00Z |
+| Deterministic generation | Two independent `aiml-scaffold generate` runs from that wheel | Passed; byte-identical; confirmed `2.44.1` present in both workflows and no orphan `product-manifest.yaml` in the output | 2026-08-15T06:36:00Z |
+| Offline doctor | `aiml-scaffold doctor --environment dev --no-cloud` | Passed | 2026-08-15T06:37:00Z |
+| Python lint | `ruff check .` | Passed, no findings | 2026-08-15T06:37:00Z |
+| YAML parse | Parsed every generated `.yml`/`.yaml` | Passed, 0 failures | 2026-08-15T06:37:00Z |
+| Actionlint | `actionlint .github/workflows/*.yml` | Passed, no findings | 2026-08-15T06:37:00Z |
+| Terraform static validation | `terraform fmt -check -recursive`; `terraform init -backend=false -lockfile=readonly`; `terraform validate` | Passed with AzureRM 4.81.0 | 2026-08-15T06:38:00Z |
+| Scenario and secret scan | Grep for `churn`/`taxi` scenario leakage and credential patterns | Passed; no leakage | 2026-08-15T06:38:00Z |
+| `scripts/verify_generation.py` against actual repo tree | Local run with `GITHUB_OUTPUT` stub | `ok: true` for the fifth candidate's receipt fix | 2026-08-15T06:05:00Z |
+| Generated tests and lint (pinned environment) | CI on this PR | Passed (recorded after merge) | Pending |
+| Static RBAC review | No RBAC changes in this fix; unaffected | Passed | 2026-08-15T06:39:00Z |
+| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-15T06:40:00Z |
+| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; counts unchanged (no new infra) | 2026-08-15T06:40:00Z |
+| Compute SKU availability / quota sufficiency | Same `doctor` check | Failed, same documented reason as every candidate since cloud compute was enabled — not a regression from this fix | 2026-08-15T06:41:00Z |
+| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | `overall_status: failed` — same profile as every prior candidate: only the expected `active_identity_match` warning and the two known compute checks | 2026-08-15T06:41:00Z |
+| Terraform plan (independent verification) | Local Terraform 1.10.0 `plan_artifact.py verify` against downloaded artifact and pulled backend state | Recorded after this candidate's plan run | Pending |
 
-**Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after fixing the CLI stdout-pollution bug.
+**Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after fixing the broken `az ml` extension pin.
 
 ## 9. Deployment authorization and stop conditions
 
