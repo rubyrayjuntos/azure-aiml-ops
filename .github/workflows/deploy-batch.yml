@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: |
-          az extension add --name ml --version 2.33.1 --yes
+          az extension add --name ml --version 2.44.1 --yes
           python -m pip install azure-identity==1.19.0 azure-storage-blob==12.24.1
       - id: context
         run: |
