@@ -112,6 +112,10 @@ Complete live, read-only quota and inventory checks before approving this plan. 
 
 **Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after fixing the stale environment-version reference.
 
+### Gate 1 milestone: first fully successful training pipeline run
+
+Run [31905669826](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31905669826), pipeline `dreamy_chain_xwc3x25ykn`, completed end to end. All four steps — `prepare` (`21986241-ecf9-48bf-9ab6-b4ba64967b04`), `train` (`857c2afc-79bf-4e12-bc39-2586ca0a37b8`), `evaluate` (`0b9ae0cd-c3f9-404b-b9b9-3dc6f1f4c119`), `register` (`c82eb567-907d-4580-a7e3-8edb03606f2a`) — status `Completed`. `az ml model list` confirms `azure-ai-ml-ops-model` version `1` registered. This closes out the real-workload track this deployment plan exists to prove: nine real bugs found and fixed through live testing (CLI flag, idle-duration format, stdout pollution, contaminated build, broken extension pin, missing `azureml-mlflow`, `container_registry_id` drift, stale environment version — plus the compute-quota restriction resolved via the Azure-side vCPU increase), each cycled through the full deterministic-build, PR/CI, authenticated-doctor, digest-bound-plan, and independently-verified-apply governance pipeline documented above.
+
 ## 9. Deployment authorization and stop conditions
 
 Apply authorization covers infrastructure creation only. It excludes replanning during apply, bootstrap changes, charged compute, training, model registration, endpoint deployment, batch execution, Test, Prod, and unreviewed remediation.
