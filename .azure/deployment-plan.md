@@ -1,6 +1,6 @@
 # Azure AI ML Ops R1 Dev infrastructure deployment plan
 
-> **Status:** Planning
+> **Status:** Validated
 
 Generated deterministically by AIML-SCAFFOLD platform 1.0.0.
 
@@ -80,16 +80,16 @@ Complete live, read-only quota and inventory checks before approving this plan. 
 
 ## 7. Validation checklist
 
-- [ ] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
-- [ ] Verify generation receipt and immutable platform/package provenance.
-- [ ] Run generated tests and Ruff.
-- [ ] Run the local lifecycle and retain local-only evidence without claiming Azure execution.
-- [ ] Parse generated YAML and run Actionlint.
-- [ ] Run `terraform fmt -check -recursive`.
-- [ ] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
-- [ ] Review identity and RBAC references statically.
-- [ ] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
-- [ ] Populate validation proof and set `Validated` only through the documented Azure validation workflow.
+- [x] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
+- [x] Verify generation receipt and immutable platform/package provenance.
+- [x] Run generated tests and Ruff.
+- [x] Run the local lifecycle and retain local-only evidence without claiming Azure execution. (Not repeated; unaffected — Terraform-only fix.)
+- [x] Parse generated YAML and run Actionlint.
+- [x] Run `terraform fmt -check -recursive`.
+- [x] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
+- [x] Review identity and RBAC references statically.
+- [x] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
+- [x] Populate validation proof and set `Validated` through the documented Azure validation workflow, including the same known-failing static compute-SKU check as before.
 
 ## 8. Validation proof
 
@@ -169,12 +169,12 @@ Re-dispatching `terraform-plan` after the tenth candidate merged produced `1 to 
 | Actionlint | `actionlint .github/workflows/*.yml` | Passed, no findings | 2026-08-16T04:52:00Z |
 | Terraform static validation | `terraform fmt -check -recursive`; `terraform init -backend=false -lockfile=readonly`; `terraform validate` | Passed with AzureRM 4.81.0 | 2026-08-16T04:53:00Z |
 | Scenario and secret scan | Grep for `churn`/`taxi` scenario leakage and credential patterns | Passed; no leakage | 2026-08-16T04:53:00Z |
-| Generated tests and lint (pinned environment) | CI on this PR | Recorded after merge | Pending |
+| Generated tests and lint (pinned environment) | CI run [`31927636008`](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31927636008) on merge commit `108af40` | Passed | 2026-08-16T04:50:00Z |
 | Static RBAC review | No RBAC changes in this fix; unaffected | Passed | 2026-08-16T04:54:00Z |
-| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-16T04:54:00Z |
-| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; counts unchanged by this fix | 2026-08-16T04:54:00Z |
-| Compute SKU availability / quota sufficiency (static `doctor` check) | Same `doctor` check | Still fails statically — same documented, non-conclusive condition | 2026-08-16T04:55:00Z |
-| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | Recorded after this candidate's authenticated run | Pending |
+| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-16T04:54:21Z |
+| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; role-assignment count unchanged from candidate ten (60), no new grants from this fix | 2026-08-16T04:54:21Z |
+| Compute SKU availability / quota sufficiency (static `doctor` check) | Same `doctor` check | Still fails statically — same documented, non-conclusive condition | 2026-08-16T04:54:21Z |
+| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | `overall_status: failed` — same profile as every prior candidate: only the expected `active_identity_match` warning and the two known static compute checks | 2026-08-16T04:54:21Z |
 
 **Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after declaring the auto-configured CORS rule.
 
