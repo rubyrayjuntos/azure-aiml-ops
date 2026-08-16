@@ -50,7 +50,7 @@ jobs:
       - id: submit
         continue-on-error: true
         run: |
-          RUN_ID=$(az ml job create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --file mlops/azureml/train/pipeline.yml --set inputs.input.path="azureml:azure-ai-ml-ops-training-data:${{ github.run_number }}" inputs.champion_metric="${{ inputs.champion_metric }}" --query name -o tsv --only-show-errors)
+          RUN_ID=$(az ml job create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --file mlops/azureml/train/pipeline.yml --set inputs.input.path="azureml:azure-ai-ml-ops-training-data:${{ github.run_number }}" inputs.champion_metric="${{ inputs.champion_metric }}" inputs.storage_account="${{ steps.context.outputs.storage }}" --query name -o tsv --only-show-errors)
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           az ml job stream -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name "$RUN_ID"
       - name: Record terminal evidence

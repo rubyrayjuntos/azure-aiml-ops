@@ -9,6 +9,10 @@ inputs:
   champion_metric:
     type: number
     default: -1.0
+
+  storage_account:
+    type: string
+
 outputs:
   train_data:
   test_data:
@@ -76,3 +80,18 @@ jobs:
       decision: ${{parent.jobs.evaluate.outputs.evaluation}}
     outputs:
       info: ${{parent.outputs.model_info_output}}
+
+  snapshot_baseline:
+    type: command
+    code: ../../../data-science/src
+    environment: azureml:azure-ai-ml-ops-train-env@latest
+
+    command: >-
+      python snapshot_baseline.py --model-name azure-ai-ml-ops-model
+      --reference-data ${{inputs.train}} --model-info ${{inputs.model_info}}
+      --storage-account ${{inputs.storage_account}} --container monitoring
+    inputs:
+      train: ${{parent.jobs.prepare.outputs.train}}
+      model_info: ${{parent.jobs.register.outputs.info}}
+      storage_account: ${{parent.inputs.storage_account}}
+

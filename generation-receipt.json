@@ -3,11 +3,11 @@
     "ml"
   ],
   "dependency_constraints_digest": "sha256:21f8a33510f047a43d60b3a9066baf9cb61b8e5f9dfdddd7263774787faec966",
-  "generated_files_digest": "sha256:f1039e484b4d8737e9c0a4c98df4438ba3a6c718c4c68abffb13efa6eec6af77",
-  "generation_id": "sha256:12e0f4db7432ed7ae65eaefafeaf124ef2ef3383258ff57fccbfa0bfbb45ad4f",
-  "manifest_digest": "sha256:603a6d9f97a62d8ddd2ce3b2dec5c4f2ff5422f8758f0220799fd7d15faa54be",
-  "platform_package_digest": "sha256:8beb5ba62dec417532579f686e8334d2c23e5506d7067a9bf7896ff0da6a6d9c",
-  "platform_source_commit": "1717b641c1fd7df2b922961132da391892588d7d",
+  "generated_files_digest": "sha256:c48b32f985dc650ffd03072f8ab64de54b03f59af3da24388c996eab0bbd2f7e",
+  "generation_id": "sha256:3848bb2f05064c860f6d234fd74c99e550e65888a75e087d9f482b1d5ca77f81",
+  "manifest_digest": "sha256:d34631c0e98433edc64ca94ad7e52dbb69371552ca17b16304533f41810585e8",
+  "platform_package_digest": "sha256:07f21303b80237548f2f2c9d58b2772322da0083170c43e8b6dba9bfd651d6c8",
+  "platform_source_commit": "7f7fb0703a1da7addc110c5e5b4531582eb2852a",
   "platform_version": "1.0.0",
   "providers": {
     "development": "local",
@@ -20,6 +20,6 @@
     "training_cloud": "azure_ml_cluster"
   },
   "receipt_schema_version": "1.0",
-  "resolved_plan_digest": "sha256:10fee8597a36f599524f293bb49e4e7d2961737c3d8968e04b3b84e49a6df489",
-  "template_digest": "sha256:0f6ec9befd92fcc6073fad6133c9bd6839b7fed4b22a36bfc69aaf859f580903"
+  "resolved_plan_digest": "sha256:f7ee070866b20c23107bac2337d9ceb963b61b7dc808d4e45e2eef3d3913ac82",
+  "template_digest": "sha256:7657a8b70e3ee1dfe607da7b63ec397e2db98cbe850183c07df13099c60fab86"
 }

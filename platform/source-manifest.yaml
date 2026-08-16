@@ -28,6 +28,8 @@ execution:
   development:
     containerized: true
     provider: local
+  monitoring:
+    enabled: true
   training:
     cloud_fallback:
       enabled: true

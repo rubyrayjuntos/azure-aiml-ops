@@ -31,6 +31,9 @@
         "containerized": true,
         "provider": "local"
       },
+      "monitoring": {
+        "enabled": true
+      },
       "training": {
         "cloud_fallback": {
           "enabled": true,
@@ -45,6 +48,7 @@
       }
     },
     "location": "eastus",
+    "monitoring_enabled": true,
     "terraform_state_key": "azure-ai-ml-ops-dev.tfstate",
     "training_cluster_enabled": true,
     "training_serverless_enabled": false
@@ -139,7 +143,8 @@
     "azure_blob_evidence",
     "github_actions",
     "azure_ml_training",
-    "azure_ml_batch"
+    "azure_ml_batch",
+    "azure_ml_monitoring"
   ],
   "manifest_schema_version": "1.0",
   "maturity_report": {
@@ -215,6 +220,12 @@
       "kind": "azure_ml_batch_compute",
       "notes": "Explicit SKU; zero minimum and one-node Dev maximum.",
       "owner": "terraform"
+    },
+    {
+      "cost_class": "always_on",
+      "kind": "monitoring_storage_container",
+      "notes": "Baseline snapshot and inference-log evidence for drift detection.",
+      "owner": "terraform"
     }
   ],
   "shared_resources": {
@@ -241,6 +252,6 @@
   "warnings": [
     "R1 providers remain preview until the Dev clean-room proof succeeds.",
     "Local lifecycle evidence does not prove Azure ML execution, identity, lineage, registration, or batch serving.",
-    "Bicep, online serving, monitoring, retraining, Foundry, Search, and Databricks are excluded."
+    "Bicep, online serving, automated retraining, Foundry, Search, and Databricks are excluded. Manually-triggered batch input-drift detection is included when monitoring is enabled; it never triggers retraining automatically."
   ]
 }
