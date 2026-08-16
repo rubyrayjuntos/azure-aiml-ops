@@ -6,7 +6,10 @@ Use Python 3.11 or 3.12. Azure ML training is pinned to Python 3.11.
 
 ## R1 boundary
 
-This repository defaults Dev execution to a portable local lifecycle: prepare, train, evaluate, conditionally package, score, and emit local evidence. Terraform provisions the Azure ML workspace and project evidence boundary, but Azure training and batch compute are generated only when independently enabled with an explicit SKU. Local proof is not Azure ML lifecycle proof. Online serving, monitoring, retraining, Foundry, Search, Databricks, and Bicep deployment are not included.
+This repository defaults Dev execution to a portable local lifecycle: prepare, train, evaluate, conditionally package, score, and emit local evidence. Terraform provisions the Azure ML workspace and project evidence boundary, but Azure training and batch compute are generated only when independently enabled with an explicit SKU. Local proof is not Azure ML lifecycle proof. Online serving, automated retraining, Foundry, Search, Databricks, and Bicep deployment are not included.
+
+Batch input-drift detection is included, manually triggered (`check-drift.yml`), not scheduled: a two-sample Kolmogorov-Smirnov test compares recent batch inference input against the training population captured at the most recent successful promotion, with Benjamini-Hochberg FDR correction and an effect-size gate. Detecting drift does not trigger retraining automatically; that decision stays with a human dispatching `train.yml`.
+
 
 ## Validate
 

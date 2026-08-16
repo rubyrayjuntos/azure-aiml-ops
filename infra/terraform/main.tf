@@ -54,6 +54,14 @@ resource "azurerm_storage_container" "evidence" {
   container_access_type = "private"
 }
 
+
+resource "azurerm_storage_container" "monitoring" {
+  name                  = "monitoring"
+  storage_account_id    = azurerm_storage_account.this.id
+  container_access_type = "private"
+}
+
+
 resource "azurerm_storage_management_policy" "evidence" {
   storage_account_id = azurerm_storage_account.this.id
   rule {

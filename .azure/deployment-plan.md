@@ -1,6 +1,6 @@
 # Azure AI ML Ops R1 Dev infrastructure deployment plan
 
-> **Status:** Validated
+> **Status:** Planning
 
 Generated deterministically by AIML-SCAFFOLD platform 1.0.0.
 
@@ -66,28 +66,30 @@ Complete live, read-only quota and inventory checks before approving this plan. 
 
 | Resource or quota | Planned | Current | Total after deployment | Limit | Result |
 |---|---:|---:|---:|---:|---|
-| Azure ML clusters | 0 more (already live) | 2 | 2 | 200 | ARM inventory; pass |
-| VM-family vCPUs (`Standard_D2s_v3`) | 0 more | Live job run confirmed `RunningNodeCount:1` on `cpu-training` (run 31887608529); quota restriction resolved | Not measured | See result | Conclusive: quota question answered by this candidate |
-| Azure ML workspace | 0 more (already live) | 3 | 3 | No count quota exposed by `az quota` | ARM inventory; pass |
-| Storage account | 0 more (already live) | 5 | 5 | 250 per region/subscription default | ARM inventory; pass |
-| Key Vault | 0 more (already live) | 3 | 3 | No count quota exposed | ARM inventory; pass |
-| Log Analytics workspace | 0 more (already live) | 3 | 3 | No applicable count quota surfaced | ARM inventory; pass |
-| Application Insights component | 0 more (already live) | 3 | 3 | No component-count quota surfaced | ARM inventory; pass |
-| User-assigned identity | 0 more (already live) | 3 | 3 | Provider limit or documented boundary | ARM inventory; pass |
-| Azure role assignments | 0 more (already live) | 57 | 57 | 4,000 per subscription | ARM inventory; pass |
+| Azure ML clusters | 2 | Not measured | Not measured | 200 | Not exercised |
+| Azure ML serverless training | Disabled | Not measured | Not measured | Exact SKU quota when enabled | Not exercised |
+| VM-family vCPUs | Exact explicit-SKU discovery required | Not measured | Not measured | Not measured | Not exercised |
+| Azure ML workspace | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Storage account | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Storage container (new: `monitoring`) | 1 more | Not measured | Not measured | 5,000,000 containers per storage account | Not exercised; trivial default limit, not a real constraint |
+| Key Vault | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Log Analytics workspace | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Application Insights component | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| User-assigned identity | 1 | Not measured | Not measured | Provider limit or documented boundary | Not exercised |
+| Azure role assignments | 0 more (existing account-scoped roles cover the new container) | Not measured | Not measured | 4,000 per subscription | Not exercised |
 
 ## 7. Validation checklist
 
-- [x] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
-- [x] Verify generation receipt and immutable platform/package provenance.
-- [x] Run generated tests and Ruff.
-- [x] Run the local lifecycle and retain local-only evidence without claiming Azure execution. (Not repeated; unaffected — pipeline YAML reference fix only.)
-- [x] Parse generated YAML and run Actionlint.
-- [x] Run `terraform fmt -check -recursive`.
-- [x] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
-- [x] Review identity and RBAC references statically.
-- [x] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
-- [x] Populate validation proof and set `Validated` through the documented Azure validation workflow, including the same known-failing static compute-SKU check as before.
+- [ ] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
+- [ ] Verify generation receipt and immutable platform/package provenance.
+- [ ] Run generated tests and Ruff.
+- [ ] Run the local lifecycle and retain local-only evidence without claiming Azure execution.
+- [ ] Parse generated YAML and run Actionlint.
+- [ ] Run `terraform fmt -check -recursive`.
+- [ ] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
+- [ ] Review identity and RBAC references statically.
+- [ ] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
+- [ ] Populate validation proof and set `Validated` only through the documented Azure validation workflow.
 
 ## 8. Validation proof
 
@@ -129,6 +131,29 @@ Diagnostic steps completed, all fail identically: data-asset input vs. raw HTTPS
 **Conclusion:** this is not a configuration problem in this project's Terraform, templates, or RBAC — it is either an account/tenant-wide or Azure ML regional platform issue affecting AAD-token batch-endpoint invocation. Filing a formal Azure support ticket was attempted (`az support in-subscription tickets create`, correct problem classification `Model deployment and serving (Batch Endpoints) / Problem consuming Batch Endpoint`) and rejected with `InvalidSupportPlan` — this subscription has no paid support plan, so technical tickets aren't available via API or portal.
 
 **Status:** R2.1, and by extension R2.7/R2.9 (which depend on working batch serving), are blocked pending either a support plan being obtained or the underlying platform issue resolving on its own. R2.2 and the champion/challenger proofs (R2.4/R2.5/R2.8), which don't depend on batch serving, proceed independently.
+
+### Tenth candidate — R2.2: land the drift-detection capability
+
+New Terraform resource (`azurerm_storage_container.monitoring`, private, same account as `evidence`), new pipeline job (`snapshot_baseline`, gated on `register`'s `registered: true` output — not file existence, since this product's `register.py` always writes `model-info.json` unlike the taxi prior art this was adapted from), new manually-dispatched workflow (`check-drift.yml`, `RUN_AZURE_DRIFT_CHECK_DEV` authorization, no scheduling), new scripts (`check_drift.py` — KS-test only, `min_drifted_features` default `1` for this 2-feature product; `snapshot_baseline.py` — references the training population, not the held-out eval split), and inference logging added to `batch_driver.py` (always present in code, inert unless `MONITORING_STORAGE_ACCOUNT` is set). Gated behind a new `monitoring_enabled` manifest flag (`execution.monitoring.enabled`), following the platform's existing `training_cluster_enabled`/`batch_cluster_enabled` convention — no future product generated from this platform gets this plumbing unless it opts in.
+
+| Check | Command | Result | Timestamp |
+|---|---|---|---|
+| Reproducible platform wheel | Two independent clean-room builds (`build/`/`dist/` removed first), `SOURCE_DATE_EPOCH` pinned to the commit timestamp | Passed; byte-identical, `sha256:07f21303b80237548f2f2c9d58b2772322da0083170c43e8b6dba9bfd651d6c8` | 2026-08-16T05:18:00Z |
+| Deterministic generation | Two independent `aiml-scaffold generate` runs from that wheel (manifest with `execution.monitoring.enabled: true`) | Passed; byte-identical; confirmed the new container, job, workflow, and scripts all rendered | 2026-08-16T05:19:00Z |
+| Offline doctor | `aiml-scaffold doctor --environment dev --no-cloud` | Passed | 2026-08-16T05:20:00Z |
+| Python lint | `ruff check .` | Passed, no findings | 2026-08-16T05:20:00Z |
+| YAML parse | Parsed every generated `.yml`/`.yaml` | Passed, 0 failures | 2026-08-16T05:20:00Z |
+| Actionlint | `actionlint .github/workflows/*.yml` | Passed, no findings, including the new `check-drift.yml` | 2026-08-16T05:20:00Z |
+| Terraform static validation | `terraform fmt -check -recursive`; `terraform init -backend=false -lockfile=readonly`; `terraform validate` | Passed with AzureRM 4.81.0 | 2026-08-16T05:21:00Z |
+| Scenario and secret scan | Grep for `churn`/`taxi` scenario leakage and credential patterns | Passed; no leakage (adapting taxi's statistical logic did not carry over any taxi-specific feature names, resource names, or fixtures) | 2026-08-16T05:21:00Z |
+| Generated tests and lint (pinned environment) | CI on this PR | Recorded after merge | Pending |
+| Static RBAC review | New Terraform container inherits existing account-scoped `compute_storage`/`workflow_storage` role assignments; no new role assignment added or needed | Passed | 2026-08-16T05:22:00Z |
+| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-16T05:22:00Z |
+| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; counts unchanged except the new container (not yet applied) | 2026-08-16T05:22:00Z |
+| Compute SKU availability / quota sufficiency (static `doctor` check) | Same `doctor` check | Still fails statically — same documented, non-conclusive condition | 2026-08-16T05:23:00Z |
+| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | Recorded after this candidate's authenticated run | Pending |
+
+**Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after landing the drift-detection capability.
 
 ## 9. Deployment authorization and stop conditions
 

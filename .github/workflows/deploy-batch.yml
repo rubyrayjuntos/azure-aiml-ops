@@ -51,7 +51,7 @@ jobs:
         continue-on-error: true
         run: |
           az ml batch-endpoint create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --file mlops/azureml/deploy/batch/endpoint.yml
-          az ml batch-deployment create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --file mlops/azureml/deploy/batch/deployment.yml --set model="azureml:azure-ai-ml-ops-model:${{ inputs.model_version }}"
+          az ml batch-deployment create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --file mlops/azureml/deploy/batch/deployment.yml --set model="azureml:azure-ai-ml-ops-model:${{ inputs.model_version }}" --set environment_variables.MONITORING_STORAGE_ACCOUNT="${{ steps.context.outputs.storage }}"
           JOB_ID=$(az ml batch-endpoint invoke -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name "azure-ai-ml-ops-batch" --input "${{ inputs.input_data_uri }}" --input-type uri_file --query name -o tsv --only-show-errors)
           echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
           az ml job stream -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name "$JOB_ID"
