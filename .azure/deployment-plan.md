@@ -1,6 +1,6 @@
 # Azure AI ML Ops R1 Dev infrastructure deployment plan
 
-> **Status:** Validated
+> **Status:** Planning
 
 Generated deterministically by AIML-SCAFFOLD platform 1.0.0.
 
@@ -80,16 +80,16 @@ Complete live, read-only quota and inventory checks before approving this plan. 
 
 ## 7. Validation checklist
 
-- [x] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
-- [x] Verify generation receipt and immutable platform/package provenance.
-- [x] Run generated tests and Ruff.
-- [x] Run the local lifecycle and retain local-only evidence without claiming Azure execution. (Not repeated; unaffected — new opt-in capability, no change to the existing local lifecycle path.)
-- [x] Parse generated YAML and run Actionlint.
-- [x] Run `terraform fmt -check -recursive`.
-- [x] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
-- [x] Review identity and RBAC references statically.
-- [x] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
-- [x] Populate validation proof and set `Validated` through the documented Azure validation workflow, including the same known-failing static compute-SKU check as before.
+- [ ] Confirm the manifest tenant, subscription, region, environment, backend, and intended deployment identity.
+- [ ] Verify generation receipt and immutable platform/package provenance.
+- [ ] Run generated tests and Ruff.
+- [ ] Run the local lifecycle and retain local-only evidence without claiming Azure execution.
+- [ ] Parse generated YAML and run Actionlint.
+- [ ] Run `terraform fmt -check -recursive`.
+- [ ] Run `terraform init -backend=false -lockfile=readonly` and `terraform validate`.
+- [ ] Review identity and RBAC references statically.
+- [ ] Run authenticated read-only quota, policy, backend, OIDC, RBAC, and state checks.
+- [ ] Populate validation proof and set `Validated` only through the documented Azure validation workflow.
 
 ## 8. Validation proof
 
@@ -154,6 +154,29 @@ New Terraform resource (`azurerm_storage_container.monitoring`, private, same ac
 | Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | `overall_status: failed` — same profile as every prior candidate: only the expected `active_identity_match` warning and the two known static compute checks | 2026-08-16T04:44:08Z |
 
 **Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after landing the drift-detection capability.
+
+### Eleventh candidate — storage-account CORS drift, same bug class as `container_registry_id`
+
+Re-dispatching `terraform-plan` after the tenth candidate merged produced `1 to add, 1 to change` — the add was the expected `monitoring` container; the change was unexpected: Terraform wanted to strip a CORS rule from `azurerm_storage_account.this` that this project's Terraform never declared. Same root cause as the earlier `container_registry_id` incident — Azure ML auto-configures this CORS rule on its workspace's storage account (enabling Studio's browser-based data preview), and the values exactly match Microsoft's own documented Studio CORS pattern. Different resolution this time: `container_registry_id`'s value is a dynamically-assigned, unpredictable ACR resource ID that genuinely cannot be declared in advance, so it was `lifecycle.ignore_changes`-d; this CORS rule's values are static and already fully knowable, so it is declared explicitly instead — future changes to Azure ML's own pattern will surface as a reviewable diff rather than being silently suppressed, and `ignore_changes` can only target the whole `blob_properties` block, not one rule within it, which would have hidden drift on the retention/versioning settings this project does intend to manage.
+
+| Check | Command | Result | Timestamp |
+|---|---|---|---|
+| Reproducible platform wheel | Two independent clean-room builds (`build/`/`dist/` removed first), `SOURCE_DATE_EPOCH` pinned to the commit timestamp | Passed; byte-identical, `sha256:23d464fe8d297e53c118e923507bff54487d632b860ddf0ba868259cc4d93f17` | 2026-08-16T04:50:00Z |
+| Deterministic generation | Two independent `aiml-scaffold generate` runs from that wheel | Passed; byte-identical; confirmed the `cors_rule` block present in the rendered `main.tf` | 2026-08-16T04:51:00Z |
+| Offline doctor | `aiml-scaffold doctor --environment dev --no-cloud` | Passed | 2026-08-16T04:52:00Z |
+| Python lint | `ruff check .` | Passed, no findings | 2026-08-16T04:52:00Z |
+| YAML parse | Parsed every generated `.yml`/`.yaml` | Passed, 0 failures | 2026-08-16T04:52:00Z |
+| Actionlint | `actionlint .github/workflows/*.yml` | Passed, no findings | 2026-08-16T04:52:00Z |
+| Terraform static validation | `terraform fmt -check -recursive`; `terraform init -backend=false -lockfile=readonly`; `terraform validate` | Passed with AzureRM 4.81.0 | 2026-08-16T04:53:00Z |
+| Scenario and secret scan | Grep for `churn`/`taxi` scenario leakage and credential patterns | Passed; no leakage | 2026-08-16T04:53:00Z |
+| Generated tests and lint (pinned environment) | CI on this PR | Recorded after merge | Pending |
+| Static RBAC review | No RBAC changes in this fix; unaffected | Passed | 2026-08-16T04:54:00Z |
+| Azure context and policy | `az account show`; `az policy assignment list` | Passed | 2026-08-16T04:54:00Z |
+| Capacity and inventory | `az resource list` by type; `az role assignment list` | Passed; counts unchanged by this fix | 2026-08-16T04:54:00Z |
+| Compute SKU availability / quota sufficiency (static `doctor` check) | Same `doctor` check | Still fails statically — same documented, non-conclusive condition | 2026-08-16T04:55:00Z |
+| Authenticated doctor (full run) | `aiml-scaffold doctor --environment dev` (cloud-enabled) | Recorded after this candidate's authenticated run | Pending |
+
+**Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after declaring the auto-configured CORS rule.
 
 ## 9. Deployment authorization and stop conditions
 

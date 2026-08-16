@@ -44,6 +44,21 @@ resource "azurerm_storage_account" "this" {
     versioning_enabled = true
     delete_retention_policy { days = 7 }
     container_delete_retention_policy { days = 7 }
+    # Azure ML auto-configures this CORS rule on its workspace's storage
+    # account to enable Studio's browser-based data preview features.
+    # Unlike container_registry_id, this value is static and knowable in
+    # advance, so it is declared here rather than ignored - a future
+    # change to Azure ML's own pattern will show up as a reviewable diff
+    # instead of being silently suppressed. Confirmed live: the first
+    # terraform-plan run after any workspace/storage activity showed this
+    # exact rule already present, unrequested by this Terraform config.
+    cors_rule {
+      allowed_headers    = ["*"]
+      allowed_methods    = ["GET", "HEAD", "PUT", "DELETE", "OPTIONS", "POST", "PATCH"]
+      allowed_origins    = ["https://mlworkspace.azure.ai", "https://ml.azure.com", "https://*.ml.azure.com", "https://ai.azure.com", "https://*.ai.azure.com"]
+      exposed_headers    = ["*"]
+      max_age_in_seconds = 1800
+    }
   }
   tags = local.tags
 }
