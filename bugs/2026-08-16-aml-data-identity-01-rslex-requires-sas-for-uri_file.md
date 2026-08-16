@@ -1,8 +1,9 @@
 ---
-title: AML-DATA-IDENTITY-01 — rslex requires SAS for new uri_file content despite identity prerequisites
+title: AML-DATA-IDENTITY-01 — rslex requires SAS on fresh credential resolution despite identity prerequisites
 id: AML-DATA-IDENTITY-01
 status: Open
 created: 2026-08-16
+updated: 2026-08-16
 component: Azure Machine Learning – Data Access (rslex mount) on AmlCompute
 severity: Blocks R2.5/R2.8 directly; R2.6 transitively
 labels: [azureml, data, identity, rslex, amlcompute, uri_file, mount, sas]
@@ -10,9 +11,10 @@ labels: [azureml, data, identity, rslex, amlcompute, uri_file, mount, sas]
 
 ## Summary
 
-- On AmlCompute, `rslex` fails to mount new `uri_file` data-asset content unless key-based (account-key-derived) SAS is available, even when every Microsoft-documented identity-based-access prerequisite is satisfied.
-- With storage shared keys disabled and the workspace configured for identity-based data access, mounting a data asset that points at newly written blob content fails; re-enabling shared keys makes the identical pipeline succeed with no other change; disabling shared keys again reproduces the failure.
-- This blocks baseline capture and challenger-promotion steps that require reading newly registered training data via identity.
+- On AmlCompute, `rslex` fails to mount `uri_file` data-asset content with key-based (account-key-derived) SAS, even when every Microsoft-documented identity-based-access prerequisite is satisfied, whenever it has to *freshly resolve* credentials for a given blob path.
+- With storage shared keys disabled and the workspace configured for identity-based data access, mounting a data asset that has never been mounted before (genuinely new content) fails on first attempt. Separately, mounting a data asset that had previously mounted fine also fails, *if* the storage account's `allowSharedKeyAccess` setting is toggled in between — even toggled back to the exact same value it started at. Re-enabling shared keys makes any of these pipelines succeed with no other change; disabling shared keys again reproduces the failure.
+- **Correction from this report's original version:** the initial finding characterized this as "new content fails, old/previously-uploaded content is unaffected." Live re-testing later the same day showed that framing was incomplete — see "Revised understanding" below. The bug itself is unchanged and still fully reproducible; only the trigger condition was mischaracterized.
+- This blocks baseline capture and challenger-promotion steps that require reading newly registered training data via identity, and is a live operational hazard for any account-level storage security setting change on a workspace already in production use.
 
 ## Environment (redacted)
 
@@ -95,6 +97,33 @@ ERROR rslex::python_error_handling:
 | Direct read of the target blob via `az storage blob show --auth-mode login` (AAD, compute-unrelated identity holding `Storage Blob Data Contributor`) | n/a | Succeeds — blob is fully readable via AAD; failure is specific to `rslex`'s own mount-time credential choice, not a genuine authorization gap |
 | `az storage account update --allow-shared-key-access true`, then re-run the *exact same* previously-failing data asset (version 8) with no other change | `sas_success` — pipeline `tender_dress_xf3d79yttv`, created 2026-08-16T06:59:04Z | `prepare`: Completed. Full pipeline (`prepare`→`train`→`evaluate`→`register`→`snapshot_baseline`) completed end-to-end |
 | `az storage account update --allow-shared-key-access false` immediately after the successful run | Restore declared state | Confirmed `allowSharedKeyAccess: False`; no drift left in Terraform's tracked state |
+| **Re-test an unrelated, long-stable data asset** (`azure-ai-ml-ops-batch-data:1`, a `LocalUpload/`-prefixed blob untouched since before this investigation began) via a batch-endpoint job, after the toggle above | Studio-invoked batch job, `batchjob-d8fb1362-a35b-cfdf-dac4-cd266edd6f9c` / child `4b549f23-c6e1-44cc-81f2-55ecc6f7e367` | **Failed**, identical `KeyBasedAuthenticationNotPermitted`, ~15:50:18Z — a blob with no relationship to any "new content" changed from working to failing |
+| **Re-test the original R1 proof asset** (`azure-ai-ml-ops-training-data:6`, the exact blob the project's first successful pipeline run used) | `calm_evening_dqnpm9qtvd` / child `96878eba-2460-4ce8-803c-550cacf483d2` | **Failed**, identical error, ~16:0x Z — confirms the failure is not specific to any one asset |
+
+## Revised understanding: the trigger is fresh credential resolution, not asset novelty
+
+The two rows above forced a correction to this report's original scope claim. Cross-referenced against Azure Monitor's built-in storage-account metrics (`Transactions`, dimensioned by `ResponseType`, no diagnostic settings required — available by default) for `AuthenticationError`, the metric class matching `KeyBasedAuthenticationNotPermitted`:
+
+```
+$ az monitor metrics list --resource <storage-account-blob-service-id> --metric Transactions \
+    --interval PT1H --dimension ResponseType --aggregation Total \
+    --start-time 2026-08-13T00:00:00Z --end-time 2026-08-16T23:59:59Z
+
+AuthenticationError totals by hour:
+2026-08-13T01:00Z  1   (stray, predates workspace creation at 2026-08-13T02:17:38Z)
+2026-08-14 .. 2026-08-15   0   (zero, for the entire span covering this project's first
+                                 successful pipeline run and this investigation's earlier work)
+2026-08-16T04:00Z  1
+2026-08-16T06:00Z  8   (matches this investigation's first mount-failure testing window)
+2026-08-16T15:00Z  1   (matches the Studio-invoked batch job failure)
+2026-08-16T16:00Z  1   (matches the training-data:6 re-test failure)
+```
+
+Zero authentication errors across two full days of active pipeline use, including the run this whole bug's "old content is safe" baseline was built on — then a cluster starting the same hour this investigation began actively re-resolving credentials for new content, followed by two more isolated hits exactly when previously-stable assets were re-tested *after* a `allowSharedKeyAccess` toggle.
+
+This is consistent with a single, coherent mechanism: `rslex` appears to cache or otherwise reuse an established credential/session context per blob path once a mount has succeeded once. Mounting genuinely new content always requires fresh resolution — which is why R2.4's first attempt at new content failed before any account setting was ever touched. But an account-level security-setting change (here, toggling `allowSharedKeyAccess`, done twice during this investigation's own diagnostic work) appears to invalidate that cached state broadly, forcing fresh resolution — and therefore the same bug — even for paths that had been mounting successfully for days. The underlying defect (defaults to key-based SAS on fresh resolution regardless of RBAC) is the same in both cases; only the trigger differs.
+
+**A parallel hypothesis was investigated and ruled out:** a Microsoft Entra Suite license (bundling Identity Protection/P2, Global Secure Access, and Identity Governance) was added to this tenant on 2026-08-09, and its timing was initially suspected as a possible cause, including for a similarly-shaped `403 Tenant mismatch` issue on a different Azure ML subsystem (see `AML-BATCH-403-TENANT-MISMATCH`). Conditional Access policies, cross-tenant B2B settings, cross-tenant synchronization, Identity Protection risk policies, Global Secure Access Tenant Restrictions, and PIM-eligible (vs. standing) role assignments were all checked directly and found empty/unconfigured/inapplicable. The metrics timeline above is also inconsistent with an Aug-9-dated cause: authentication errors stayed at zero for the five days between the license addition and this investigation's testing, only appearing the same hour active testing began.
 
 ## Related, separate bug (upload path)
 
@@ -104,6 +133,7 @@ Workaround for the upload-side bug only: upload the blob directly via `az storag
 
 ## Minimal reproducible workflow
 
+**Path A — genuinely new content:**
 1. Create an Azure ML workspace with `storage_account_access_type=Identity`; confirm `system_datastores_auth_mode=identity`.
 2. Set `allowSharedKeyAccess=false` on the workspace's storage account.
 3. Grant the compute cluster's managed identity `Storage Blob Data Contributor` on the storage account.
@@ -112,14 +142,21 @@ Workaround for the upload-side bug only: upload the blob directly via `az storag
 6. Observe the job fail with `KeyBasedAuthenticationNotPermitted` inside `rslex.log`.
 7. Re-enable `allowSharedKeyAccess=true` with no other change; re-submit the identical job — it succeeds.
 
+**Path B — previously-working content, after an account setting change:**
+1. Start from a workspace/storage account already in the state above, with at least one data asset that has previously mounted successfully on AmlCompute.
+2. Toggle `allowSharedKeyAccess` on the storage account (e.g. `true` then back to `false`, or vice versa) with no other change.
+3. Re-submit a pipeline job mounting the *same* previously-successful data asset.
+4. Observe the identical `KeyBasedAuthenticationNotPermitted` failure, on content that required no fresh upload or registration.
+
 ## Why this matters
 
-Every data asset registered during this project's initial setup happened to reuse identical, previously-uploaded content across repeated test runs (versions 1–6 of the same asset, byte-identical). Azure ML's own asset registration silently deduplicates identical content by hash and skips the underlying blob write — so those runs never actually exercised the "new content" code path, and the bug went unnoticed until content genuinely changed. Any project that (a) disables storage account shared-key access per Microsoft's own documented recommendation, and (b) needs to feed new training/inference data into an AmlCompute pipeline as it evolves, will hit this.
+Every data asset registered during this project's initial setup happened to reuse identical, previously-uploaded content across repeated test runs (versions 1–6 of the same asset, byte-identical). Azure ML's own asset registration silently deduplicates identical content by hash and skips the underlying blob write — so those runs never actually exercised a fresh-credential-resolution code path, and the bug went unnoticed until content genuinely changed (Path A). Separately, and more operationally concerning: **any account-level storage security setting change on a workspace already in production use is enough to trigger the same failure on data that has been working for days**, per Path B. Any project that (a) disables storage account shared-key access per Microsoft's own documented recommendation, and (b) either feeds new training/inference data into an AmlCompute pipeline as it evolves, or ever needs to touch storage-account-level security settings post-deployment, will hit this.
 
 ## Evidence artifacts
 
 - `.azure/deployment-plan.md`, section "AML-DATA-IDENTITY-01" (this project's own repo) — full narrative, controls table, and diagnostic evidence as recorded live on 2026-08-16.
-- Job run IDs referenced above: `affable_candle_338zy0y9c6` / `57ff63d7-dd06-4abe-9b84-77ef51868adf` (identity_fail), `gifted_bird_dz7r42k80q` / `37e68ab5-8a55-4487-8a66-55ac564f9d00` (identity_fail_again), `tender_dress_xf3d79yttv` (sas_success).
+- Job run IDs referenced above: `affable_candle_338zy0y9c6` / `57ff63d7-dd06-4abe-9b84-77ef51868adf` (identity_fail, new content), `gifted_bird_dz7r42k80q` / `37e68ab5-8a55-4487-8a66-55ac564f9d00` (identity_fail_again, new content), `tender_dress_xf3d79yttv` (sas_success), `batchjob-d8fb1362-a35b-cfdf-dac4-cd266edd6f9c` / `4b549f23-c6e1-44cc-81f2-55ecc6f7e367` (previously-stable content fails post-toggle), `calm_evening_dqnpm9qtvd` / `96878eba-2460-4ce8-803c-550cacf483d2` (original R1 proof asset fails post-toggle).
+- Azure Monitor `Transactions` metric (storage-account blob service, `ResponseType=AuthenticationError`, hourly, 2026-08-13 through 2026-08-16) — zero events for the two full days spanning this project's original successful proof, onset beginning the same hour this investigation's active testing began.
 
 ## Non-solutions and constraints
 
@@ -133,8 +170,9 @@ Blocks R2.5 (winning-challenger baseline snapshot) and R2.8 (evaluation-crash fa
 
 ## Request
 
-- Engineering triage for `rslex`'s credential resolution: honor identity-based access (`system_datastores_auth_mode=identity`) for `uri_file` assets pointing at content added after workspace/datastore provisioning, provided the compute identity has the documented RBAC.
-- Guidance on any additional datastore or asset-level setting required to force identity-only mount resolution for new content, if one exists outside what's currently documented.
+- Engineering triage for `rslex`'s credential resolution: honor identity-based access (`system_datastores_auth_mode=identity`) whenever it needs to freshly resolve a `uri_file` asset's credentials — both for content added after workspace/datastore provisioning, and for previously-working content re-resolved after an account-level storage setting change — provided the compute identity has the documented RBAC in both cases.
+- Specifically: does toggling `allowSharedKeyAccess` on a storage account intentionally invalidate `rslex`'s cached per-path credential/session state for that datastore? If so, that behavior plus the fallback-to-key-based-SAS bug compound into exactly this failure mode, and the fix may be as narrow as correcting the fallback's auth-mode choice.
+- Guidance on any additional datastore or asset-level setting required to force identity-only mount resolution, if one exists outside what's currently documented.
 
 ## Filing status
 
