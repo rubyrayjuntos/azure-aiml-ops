@@ -178,6 +178,20 @@ Re-dispatching `terraform-plan` after the tenth candidate merged produced `1 to 
 
 **Validated by:** Ray Swan / Claude, repeating the documented Azure validation workflow after declaring the auto-configured CORS rule.
 
+### R2.2 live apply evidence
+
+`terraform-apply.yml` run [`31927897516`](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31927897516), dispatched against reviewed plan `31927823535`/attempt 1 (digest `sha256:61db05aa05c3f279859d3cf3563624e62809b4728fe7799a085ee33881aa84a4`, JSON digest `sha256:c902355b6890214f08d65c60a448cca6e6c932f760aae31f54f77127ccc311e0`), combining the tenth and eleventh candidates into one clean apply. Job `apply` concluded `success`. Terraform output: `azurerm_storage_container.monitoring: Creation complete after 12s`, `id=/subscriptions/***/resourceGroups/rg-azure-ai-ml-ops-dev/providers/Microsoft.Storage/storageAccounts/stazureaimlopscffddc57/blobServices/default/containers/monitoring`; `Apply complete! Resources: 1 added, 0 changed, 0 destroyed` — the CORS-rule declaration matched already-existing Azure state exactly (0 changed), confirming the eleventh candidate's fix was correct, not just plausible. No other resources touched.
+
+**Verified by:** Ray Swan / Claude, `gh run view 31927897516 --json status,conclusion,jobs` → `{"conclusion":"success", ...}`, and the apply step's own log inspected directly for the `Creation complete` and `Apply complete!` lines.
+
+### R2.3 — `NOT_READY` proof (`check-drift` before any baseline exists)
+
+Confirmed the `monitoring` container held no `baseline/reference.json` blob (`az storage blob list` returned empty) before dispatching. Dispatched `check-drift.yml` run [`31928136371`](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31928136371) with only `cloud_compute_authorization=RUN_AZURE_DRIFT_CHECK_DEV`, no overrides. Job `check-drift` concluded `success`; `check_drift.py` printed `MONITORING_STATUS=NOT_READY` and exited 0 (no baseline to compare against, correctly distinguished from a crash).
+
+Evidence blob pulled directly from `platform-evidence` (`v1/azure-ai-ml-ops/dev/2026/08/16/drift-31928136371/sha256:8a6f...441.json`): `"state":"succeeded"`, `"operation":"drift_check"`, `"metadata":{"drift_status":"NOT_READY"}` — execution outcome and domain outcome recorded as the two distinct dimensions the plan requires, not conflated.
+
+**Verified by:** Ray Swan / Claude, `az storage blob list` (pre-dispatch, empty), `gh run view 31928136371 --log` (`MONITORING_STATUS=NOT_READY` line), and direct blob download of the evidence event JSON.
+
 ## 9. Deployment authorization and stop conditions
 
 Apply authorization covers infrastructure creation only. It excludes replanning during apply, bootstrap changes, charged compute, training, model registration, endpoint deployment, batch execution, Test, Prod, and unreviewed remediation.
