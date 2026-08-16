@@ -192,6 +192,41 @@ Evidence blob pulled directly from `platform-evidence` (`v1/azure-ai-ml-ops/dev/
 
 **Verified by:** Ray Swan / Claude, `az storage blob list` (pre-dispatch, empty), `gh run view 31928136371 --log` (`MONITORING_STATUS=NOT_READY` line), and direct blob download of the evidence event JSON.
 
+### Twelfth candidate — fix `az ml data create`'s local-upload path (platform commit `98f1b19`)
+
+R2.4's `data/train.csv` edit was the first genuinely new content since generation — every prior `train.yml` run (data-asset versions 1–6) re-registered byte-identical content, which Azure ML dedupes without a real upload, masking a real bug. The first R2.4 dispatch failed at `az ml data create --path data/train.csv` with `KeyBasedAuthenticationNotPermitted`; reproduced manually with an identity that already holds `Storage Blob Data Contributor` directly on the storage account, ruling out an RBAC gap. Root cause: `az ml data create`'s local-path upload always requests an account-key-derived SAS regardless of caller RBAC, incompatible with this project's `shared_access_key_enabled = false`. Fixed by uploading via `az storage blob upload --auth-mode login` (pure AAD) and registering the data asset from the resulting datastore path instead of a local path. Two independent generations from the reproducible wheel matched byte-for-byte; merged via PR [#39](https://github.com/rubyrayjuntos/azure-aiml-ops/pull/39).
+
+This fix resolved the CLI-side symptom but exposed a second, deeper defect described below.
+
+### AML-DATA-IDENTITY-01 — confirmed Azure ML platform defect: new data-asset content fails to mount on AmlCompute under keyless storage
+
+**Expected invariant:** `storage.shared_access_key_enabled == false` AND `workspace.system_datastores_auth_mode == identity` AND compute identity holds `Storage Blob Data Contributor` on the storage account SHOULD be sufficient for an AmlCompute job to mount a `uri_file` data-asset input via pure AAD/managed-identity auth, per Microsoft's own documented data-access model.
+
+**Observed:** After the twelfth candidate's fix, `train.yml` run [`31931056281`](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31931056281) got past data-asset registration but the pipeline's `prepare` step failed. Retrieved directly from the run's log blobs (`ExperimentRun/dcid.<run>/system_logs/data_capability/rslex.log...`, fetched via `az storage blob download --auth-mode login` against the `azureml` container, since `az ml job download` hits the identical bug on read): `rslex` (the AzureML mount driver) issued a HEAD request to the blob and received `403 KeyBasedAuthenticationNotPermitted` — `rslex` itself requested key-derived SAS, not an AAD bearer token, despite every documented precondition being met.
+
+**Controls performed (each isolating one variable):**
+| Variable changed | Result |
+|---|---|
+| Re-dispatch (transient-failure check) | Failed identically on run [`31931627367`](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31931627367) — not transient |
+| `az ml data create` → latest `azure-ai-ml==1.34.1` Python SDK directly (not the pinned 2.44.1 CLI extension) | Identical `KeyBasedAuthenticationNotPermitted` on upload |
+| AzureRM provider 4.81.0 schema inspected directly (`terraform providers schema -json`) for a `system_datastores_auth_mode`-equivalent workspace argument | Not present in this provider version — no Terraform-native escape hatch |
+| `az ml workspace show --query system_datastores_auth_mode` | Already `identity` — disproves the theory that the workspace itself is misconfigured for key-based system datastores |
+| Blob path convention: custom path vs. the `LocalUpload/<hash>/` prefix convention used by every working (pre-existing) data-asset version | Both fail identically — not a path-convention issue |
+| `az storage account update --allow-shared-key-access true`, then re-run the exact same failing data asset (version 8) | `prepare` → `Completed`; full pipeline (`prepare`→`train`→`evaluate`→`register`→`snapshot_baseline`) completed end-to-end |
+| Revert `--allow-shared-key-access false` immediately after the diagnostic run, to restore the state Terraform declares (no live drift left standing) | Confirmed `allowSharedKeyAccess: False` afterward |
+
+**Conclusion:** Genuine platform/runtime defect in `rslex`'s credential resolution for AmlCompute-mounted `uri_file` data assets, not a configuration gap in this project's Terraform, RBAC, or workspace settings. No template-level remediation exists that preserves the keyless-storage invariant. Per owner decision, `shared_access_key_enabled` stays `false` (the R1 hardening decision is not reversed to accommodate this); the defect is recorded rather than worked around.
+
+**Diagnostic evidence (not a governed run — manually dispatched via `az ml job create` during the temporary, since-reverted key-enabled window, not through `train.yml`):** pipeline `tender_dress_xf3d79yttv`, using the real R2.4 challenger data (data-asset version 8, the label-noise `data/train.csv` edit). All five steps (`prepare`, `train`, `evaluate`, `register`, `snapshot_baseline`) completed. `evaluate`'s `test_f1` metric (pulled via the MLflow REST proxy): `0.5`, matching the local dry-run prediction exactly. `register`'s `promotion-decision.json` (pulled via `az ml job download` during the key-enabled window): `{"candidate_metric": 0.5, "champion_metric": 0.8, "metric": "f1", "minimum_improvement": 0.01, "promote": false, "reason": "not_improved"}`, `"registered": false`. `az ml model list` still shows only v1. `monitoring/baseline/reference.json` confirmed absent both before and after this run (`az storage blob list` on the `monitoring` container, empty both times) — the baseline-immutability invariant held.
+
+### R2.4 — challenger rejection
+
+**Functional/application-logic behavior: proven.** The champion/challenger rejection path — losing-challenger data → `evaluate` computes a real, lower `test_f1` → `promotion-decision.json` correctly declines → `register` writes `registered: false` → `snapshot_baseline` correctly skips → baseline stays untouched — is proven correct by the diagnostic run above, with live Azure evidence at every step.
+
+**Governed execution: blocked by AML-DATA-IDENTITY-01.** The normal path (`gh workflow run train.yml`, with `emit_evidence.py`-recorded evidence) cannot currently complete for any *new* `data/train.csv` content while `shared_access_key_enabled = false` is enforced, because `prepare` cannot mount the resulting data asset. This is not a regression in R2.4's own logic; it is the same platform defect blocking the governed path for R2.5 and R2.8 as well, both of which also require new training-data content.
+
+**Status:** R2.4's scenario is proven; its evidence was captured through a diagnostic exception rather than the governed workflow, and is recorded as such. R2.5 (winning challenger) and R2.8 (evaluation-crash containment) are blocked by the same defect pending a resolution that doesn't require reversing the keyless-storage invariant.
+
 ## 9. Deployment authorization and stop conditions
 
 Apply authorization covers infrastructure creation only. It excludes replanning during apply, bootstrap changes, charged compute, training, model registration, endpoint deployment, batch execution, Test, Prod, and unreviewed remediation.
