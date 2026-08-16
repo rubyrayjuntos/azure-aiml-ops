@@ -46,7 +46,17 @@ jobs:
       - name: Register environment and dataset
         run: |
           az ml environment create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --file mlops/azureml/train/train-env.yml
-          az ml data create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name "azure-ai-ml-ops-training-data" --version "${{ github.run_number }}" --type uri_file --path data/train.csv
+          # az ml data create's local-path upload always requests an account-key-derived SAS,
+          # which is rejected outright once shared_access_key_enabled is false, regardless of the
+          # caller's own RBAC. Confirmed live (az ml extension 2.44.1): the SDK-level
+          # KeyBasedAuthenticationNotPermitted error reproduces identically for a caller that
+          # already holds Storage Blob Data Contributor. Uploading via `az storage blob upload
+          # --auth-mode login` (AAD, no key involved) and registering the resulting datastore path
+          # avoids the CLI's local-upload code path entirely.
+          DATASTORE_CONTAINER=$(az ml datastore show -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name workspaceblobstore --query container_name -o tsv --only-show-errors)
+          DATA_PATH="azure-ai-ml-ops-training-data/${{ github.run_number }}/train.csv"
+          az storage blob upload --account-name "${{ steps.context.outputs.storage }}" --container-name "$DATASTORE_CONTAINER" --name "$DATA_PATH" --file data/train.csv --auth-mode login --overwrite
+          az ml data create -g "rg-azure-ai-ml-ops-dev" -w "mlw-azure-ai-ml-ops-dev" --name "azure-ai-ml-ops-training-data" --version "${{ github.run_number }}" --type uri_file --path "azureml://datastores/workspaceblobstore/paths/$DATA_PATH"
       - id: submit
         continue-on-error: true
         run: |
