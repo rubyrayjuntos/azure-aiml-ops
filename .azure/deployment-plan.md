@@ -116,6 +116,20 @@ Complete live, read-only quota and inventory checks before approving this plan. 
 
 Run [31905669826](https://github.com/rubyrayjuntos/azure-aiml-ops/actions/runs/31905669826), pipeline `dreamy_chain_xwc3x25ykn`, completed end to end. All four steps — `prepare` (`21986241-ecf9-48bf-9ab6-b4ba64967b04`), `train` (`857c2afc-79bf-4e12-bc39-2586ca0a37b8`), `evaluate` (`0b9ae0cd-c3f9-404b-b9b9-3dc6f1f4c119`), `register` (`c82eb567-907d-4580-a7e3-8edb03606f2a`) — status `Completed`. `az ml model list` confirms `azure-ai-ml-ops-model` version `1` registered. This closes out the real-workload track this deployment plan exists to prove: nine real bugs found and fixed through live testing (CLI flag, idle-duration format, stdout pollution, contaminated build, broken extension pin, missing `azureml-mlflow`, `container_registry_id` drift, stale environment version — plus the compute-quota restriction resolved via the Azure-side vCPU increase), each cycled through the full deterministic-build, PR/CI, authenticated-doctor, digest-bound-plan, and independently-verified-apply governance pipeline documented above.
 
+## 8a. R2: closing the model lifecycle loop
+
+R2 scope (agreed 2026-08-16): prove `register → deploy → infer → observe → detect → retrain → compare → promote/retain` against the real v1 model R1 produced. Full plan: `R2.1` batch serving proof, `R2.2` land a drift-detection capability adapted from proven prior art in the sibling `azure-mlops` project, `R2.3`–`R2.9` interleaved champion/challenger and drift-state proofs. See session record for the full sequence.
+
+### R2.1 blocker: batch-endpoint invoke fails with a genuine Azure-side auth rejection
+
+`az ml batch-endpoint invoke` (and a raw REST call to the same scoring URI, bypassing the CLI/SDK entirely) fails with `403 Tenant mismatch: Token tenant does not match resource tenant`, returned directly by Azure's own AML scoring frontdoor (`server: azureml-frontdoor`), not by the CLI. `batch-endpoint create` and `batch-deployment create` both succeed cleanly against the same workspace with the same credentials; only `invoke` fails.
+
+Diagnostic steps completed, all fail identically: data-asset input vs. raw HTTPS blob URL input; user-principal token vs. service-principal (GitHub OIDC) token; decoded token claims confirmed correct (`tid` matches the workspace's own `properties.tenantId`, `aud=https://ml.azure.com`); endpoint and deployment deleted and fully recreated from scratch; `az ml workspace sync-keys` run; `auth_mode: key` attempted as a workaround and rejected outright by Azure (`AuthMode must be 'AADToken'` — batch endpoints only support AAD-token auth, confirming this isn't a config choice we can route around); and — the conclusive test — the identical failure reproduced against a completely separate, older, previously-provisioned workspace and endpoint in the same subscription/tenant (`mlw-azmlops-0001dev` / `taxi-gha-bep-azmlops-0001dev`, unrelated to anything R2 touched).
+
+**Conclusion:** this is not a configuration problem in this project's Terraform, templates, or RBAC — it is either an account/tenant-wide or Azure ML regional platform issue affecting AAD-token batch-endpoint invocation. Filing a formal Azure support ticket was attempted (`az support in-subscription tickets create`, correct problem classification `Model deployment and serving (Batch Endpoints) / Problem consuming Batch Endpoint`) and rejected with `InvalidSupportPlan` — this subscription has no paid support plan, so technical tickets aren't available via API or portal.
+
+**Status:** R2.1, and by extension R2.7/R2.9 (which depend on working batch serving), are blocked pending either a support plan being obtained or the underlying platform issue resolving on its own. R2.2 and the champion/challenger proofs (R2.4/R2.5/R2.8), which don't depend on batch serving, proceed independently.
+
 ## 9. Deployment authorization and stop conditions
 
 Apply authorization covers infrastructure creation only. It excludes replanning during apply, bootstrap changes, charged compute, training, model registration, endpoint deployment, batch execution, Test, Prod, and unreviewed remediation.
