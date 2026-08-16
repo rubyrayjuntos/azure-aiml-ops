@@ -27,8 +27,9 @@ labels: [azureml, batch-endpoint, invoke, tenant, auth, cli]
   ```
   azure-cli: 2.89.1
   azure-cli-core: 2.89.1
-  extensions: ml 2.44.1
+  extensions: ml (az extension show reports 2.44.1)
   ```
+  Note: the `ml` extension's own `azure-ai-ml` dependency shows `1.34.1` in this environment (`User-Agent: azureml-cli-v2/2.38.1 azure-ai-ml/1.34.1` on the actual failing request, confirmed via `dist-info` in the extension's install directory) — some drift from a stock `2.44.1` install occurred during this investigation's diagnostic work. Noted for accuracy; irrelevant to the finding below, since the failure is a server-side rejection independent of client package versions and was also reproduced earlier in this investigation on an unmodified CLI session.
 - Auth: Entra ID (Microsoft Entra ID); `az account show` confirms `tenantId` matches the workspace's tenant
 - Batch endpoint: `[ENDPOINT_NAME]` (WS1), `taxi-gha-bep-azmlops-0001dev` (WS2); compute: AmlCompute `[COMPUTE_NAME]`
 
@@ -66,6 +67,17 @@ labels: [azureml, batch-endpoint, invoke, tenant, auth, cli]
 - `az ml workspace sync-keys` run.
 - `auth_mode: key` attempted as a workaround — rejected outright by Azure with `AuthMode must be 'AADToken'` (batch endpoints only support AAD-token auth for this workspace configuration, so this isn't a viable routing-around).
 - **Conclusive test:** the identical failure reproduced against a completely separate, older, previously-provisioned workspace and endpoint in the same subscription/tenant (`mlw-azmlops-0001dev` / `taxi-gha-bep-azmlops-0001dev`), unrelated to anything this project's Terraform/RBAC/templates touch.
+- **Re-tested with full `--debug` tracing, ~9 hours after endpoint creation** (ruling out DNS/routing propagation delay) — identical result. Decoded the exact bearer token sent to the scoring frontdoor and cross-checked its `tid` claim against every tenant-bearing field reachable via ARM:
+
+  | Source | Tenant ID |
+  |---|---|
+  | Bearer token `tid` claim (`aud=https://ml.azure.com`, `appid=04b07795-8ddb-461a-bbee-02f9e1bf7b46` — the well-known first-party Azure CLI app ID) | `[TENANT_A_ID]` |
+  | `az account show --query homeTenantId` | `[TENANT_A_ID]` |
+  | Workspace ARM resource `properties.tenantId` (`GET .../workspaces/mlw-azure-ai-ml-ops-dev?api-version=2024-04-01`) | `[TENANT_A_ID]` |
+  | Workspace system-assigned identity `identity.tenantId` (same ARM response) | `[TENANT_A_ID]` |
+  | Only tenant visible via `az account tenant list` | `[TENANT_A_ID]` |
+
+  All five identical — no B2B/guest-tenant discrepancy, no multi-tenant app subtlety, nothing a client-side fix could address. The `POST /jobs` request to the scoring frontdoor itself returns a raw `text/plain` body (`Content-Length: 60`, not JSON), which is why the CLI's own exception handling surfaces the frontdoor's literal response text as the error message rather than a structured error object — traced through `_endpoint_utils.py`'s `validate_response()` to confirm this is the server's actual response body, not a client-side fabrication.
 
 ## Reproduction control
 
